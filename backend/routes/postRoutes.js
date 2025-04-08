@@ -1,36 +1,46 @@
 import express from "express";
 import {
-	createPost,
-	createStory,
-	getPost,
-	deletePost,
-	likeUnlikePost,
-	commentOnPost,
-	replyToComment,
-	likeUnlikeComment,
-	banPost,
-	unbanPost,
-	replyToPost,
-	getFeedPosts,
-	getUserPosts,
-	getStories,
+  createPost,
+  createStory,
+  getPost,
+  deletePost,
+  likeUnlikePost,
+  commentOnPost,
+  replyToComment,
+  likeUnlikeComment,
+  banPost,
+  unbanPost,
+  replyToPost,
+  getFeedPosts,
+  getUserPosts,
+  getStories,
+  repostPost,
 } from "../controllers/postController.js";
 import protectRoute from "../middlewares/protectRoute.js";
 
 const router = express.Router();
 
+// GET Routes
 router.get("/feed", protectRoute, getFeedPosts);
 router.get("/stories", protectRoute, getStories);
+router.get("/user/:username", getUserPosts); // Moved up to avoid conflict with /:id
 router.get("/:id", getPost);
-router.get("/user/:username", getUserPosts);
+
+// POST Routes
 router.post("/create", protectRoute, createPost);
 router.post("/story", protectRoute, createStory);
-router.post("/comment/:id", protectRoute, commentOnPost);
-router.post("/reply/:postId/:commentId", protectRoute, replyToComment);
+router.post("/post/:postId/comment", protectRoute, commentOnPost); // Matches frontend
+router.post("/post/:postId/comment/:commentId/reply", protectRoute, replyToComment); // Matches frontend
+router.post("/post/:postId/reply", protectRoute, replyToPost);
+router.post("/repost/:postId", protectRoute, repostPost);
+
+// PUT Routes
 router.put("/like/:id", protectRoute, likeUnlikePost);
-router.put("/like-comment/:postId/:commentId", protectRoute, likeUnlikeComment);
+router.put("/post/:postId/comment/:commentId/like", protectRoute, likeUnlikeComment); // Matches frontend
 router.put("/ban/:id", protectRoute, banPost);
 router.put("/unban/:id", protectRoute, unbanPost);
+
+// DELETE Routes
 router.delete("/:id", protectRoute, deletePost);
-router.post("/reply/:postId", protectRoute, replyToPost); 
+
 export default router;

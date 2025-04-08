@@ -1,19 +1,20 @@
 import express from "express";
 import {
-	followUnFollowUser,
-	getUserProfile,
-	loginUser,
-	logoutUser,
-	signupUser,
-	updateUser,
-	getSuggestedUsers,
-	freezeAccount,
-	adminLogin,
-	banUser,
-	unbanUser,
-	getUserDashboard,
-	getAdminDashboard,
-	promoteToAdmin,
+  followUnFollowUser,
+  getUserProfile,
+  loginUser,
+  logoutUser,
+  signupUser,
+  updateUser,
+  getSuggestedUsers,
+  freezeAccount,
+  adminLogin,
+  banUser,
+  unbanUser,
+  getUserDashboard,
+  getAdminDashboard,
+  promoteToAdmin,
+  getUserStats, 
 } from "../controllers/userController.js";
 import protectRoute from "../middlewares/protectRoute.js";
 
@@ -23,6 +24,7 @@ router.get("/profile/:query", getUserProfile);
 router.get("/suggested", protectRoute, getSuggestedUsers);
 router.get("/dashboard", protectRoute, getUserDashboard);
 router.get("/admin/dashboard", protectRoute, getAdminDashboard);
+router.get("/stats/:username", getUserStats); // 
 router.post("/signup", signupUser);
 router.post("/login", loginUser);
 router.post("/admin/login", adminLogin);
