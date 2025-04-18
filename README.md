@@ -1,6 +1,6 @@
 
 
--   🌟 Tech stack: MERN + Socket.io + Chakra UI
+-   🌟 Tech stack: MERN + Socket.io + MATERIAL UI + ANTD UI + SKELETON MOTION + FRAMER MOTION
 -   🎃 Authentication & Authorization with JWT
 -   📝 Create Post
 -   🗑️ Delete Post
