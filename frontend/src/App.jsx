@@ -1,67 +1,269 @@
-import { Box, Container, useMediaQuery, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react";
+import React, { useState, lazy, Suspense, useTransition } from "react";
+import {
+  Box,
+  Container,
+  Modal,
+  useMediaQuery,
+  ThemeProvider,
+  createTheme,
+} from "@mui/material";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import UserPage from "./pages/UserPage";
-import PostPage from "./pages/PostPage";
-import Header from "./components/Header";
-import HomePage from "./pages/HomePage";
-import AuthPage from "./pages/AuthPage";
 import { useRecoilValue } from "recoil";
 import userAtom from "./atoms/userAtom";
-import UpdateProfilePage from "./pages/UpdateProfilePage";
-import CreatePost from "./components/CreatePost"; // This should be a page if standalone
-import ChatPage from "./pages/ChatPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import DashboardPage from "./pages/DashboardPage";
+import { SocketContextProvider } from "./context/SocketContext";
+import { Skeleton } from "antd";
+import TopNav from "./components/TopNav";
 import BottomNavigation from "./components/BottomNav";
-import SearchPage from "./pages/SearchPage";
-import { useDisclosure } from "@chakra-ui/react";
+import Notification from "./components/Notification";
+import ErrorBoundary from "./components/ErrorBoundary";
+
+// Lazy-loaded pages
+const UserPage = lazy(() => import("./pages/UserPage"));
+const PostPage = lazy(() => import("./pages/PostPage"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const UpdateProfilePage = lazy(() => import("./pages/UpdateProfilePage"));
+const CreatePost = lazy(() => import("./components/CreatePost"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const SearchPage = lazy(() => import("./pages/SearchPage"));
+const EditProfile = lazy(() => import("./components/EditProfile"));
+const EditPostPage = lazy(() => import("./pages/EditPostPage"));
+const AdminProfilePage = lazy(() => import("./pages/AdminProfilePage"));
+
+// Dark theme matching AuthPage.jsx
+const theme = createTheme({
+  palette: {
+    mode: "dark",
+    primary: { main: "#a78bfa" },
+    secondary: { main: "#8b5cf6" },
+    background: { default: "#1a1a1a", paper: "rgba(255, 255, 255, 0.05)" },
+    text: { primary: "#ffffff", secondary: "rgba(255, 255, 255, 0.7)" },
+  },
+  typography: {
+    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          borderRadius: "16px",
+          border: "1px solid rgba(255, 255, 255, 0.2)",
+          background: "rgba(255, 255, 255, 0.05)",
+          backdropFilter: "blur(10px)",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: { root: { textTransform: "none" } },
+    },
+  },
+});
 
 function App() {
   const user = useRecoilValue(userAtom);
   const { pathname } = useLocation();
-  const [isSmallScreen] = useMediaQuery("(max-width: 768px)");
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const isSmallScreen = useMediaQuery("(max-width:501px)");
+  const isMediumScreenOrLarger = useMediaQuery("(min-width:501px)");
+  const [isOpen, setIsOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const handleOpen = () => {
+    startTransition(() => {
+      setIsOpen(true);
+    });
+  };
+
+  const handleClose = () => {
+    startTransition(() => {
+      setIsOpen(false);
+    });
+  };
+
+  const bottomPadding = isSmallScreen ? "70px" : "0";
+  const topNavHeight = 64;
+  const topPadding = isMediumScreenOrLarger ? `${topNavHeight}px` : "0";
+
+  const LoadingSkeleton = () => (
+    <Box sx={{ p: 4 }}>
+      <Skeleton active paragraph={{ rows: 5 }} />
+    </Box>
+  );
 
   return (
-    <Box position={"relative"} w="full" minH="100vh" pb={isSmallScreen ? "60px" : "0"}>
-      <Container maxW={pathname === "/" ? { base: "620px", md: "900px" } : "620px"}>
-        {!isSmallScreen && <Header />}
-        <Routes>
-          <Route path="/" element={user ? <HomePage /> : <Navigate to="/auth" />} />
-          <Route path="/auth" element={!user ? <AuthPage /> : <Navigate to="/" />} />
-          <Route path="/update" element={user ? <UpdateProfilePage /> : <Navigate to="/auth" />} />
-          <Route path="/create-post" element={user ? <CreatePost /> : <Navigate to="/auth" />} /> {/* Added */}
-          <Route
-            path="/:username"
-            element={
-              user ? (
-                <UserPage />
-              ) : (
-                <UserPage />
-              )
-            }
-          />
-          <Route path="/:username/post/:pid" element={<PostPage />} />
-          <Route path="/chat" element={user ? <ChatPage /> : <Navigate to="/auth" />} />
-          <Route path="/settings" element={user ? <SettingsPage /> : <Navigate to="/auth" />} />
-          <Route path="/dashboard" element={user ? <DashboardPage /> : <Navigate to="/auth" />} />
-          <Route path="/search" element={user ? <SearchPage /> : <Navigate to="/auth" />} />
-        </Routes>
-      </Container>
+    <ThemeProvider theme={theme}>
+      <SocketContextProvider>
+        <ErrorBoundary>
+          <Box
+            position="relative"
+            width="100%"
+            minHeight="100vh"
+            paddingBottom={bottomPadding}
+            bgcolor="background.default"
+            color="text.primary"
+          >
+            <Notification />
+            {isMediumScreenOrLarger && pathname !== "/auth" && user && (
+              <TopNav
+                user={user}
+                sx={{ position: "fixed", top: 0, zIndex: 1200, width: "100%" }}
+              />
+            )}
+            <Container
+              maxWidth={pathname === "/" ? { xs: "xs", md: "md" } : { xs: "xs", md: "sm" }}
+              sx={{
+                px: { xs: 2, md: 4 },
+                py: 4,
+                pt: topPadding,
+              }}
+            >
+              <Suspense fallback={<LoadingSkeleton />}>
+                <Routes>
+                  <Route
+                    path="/"
+                    element={user ? <HomePage /> : <Navigate to="/auth" replace />}
+                  />
+                  <Route
+                    path="/auth"
+                    element={!user ? <AuthPage /> : <Navigate to="/" replace />}
+                  />
+                  <Route
+                    path="/update"
+                    element={
+                      user ? <UpdateProfilePage /> : <Navigate to="/auth" replace />
+                    }
+                  />
+                  <Route
+                    path="/create-post"
+                    element={
+                      user ? (
+                        <Suspense fallback={<LoadingSkeleton />}>
+                          <Modal
+                            open={true}
+                            onClose={() => navigate("/")}
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Box
+                              sx={{
+                                bgcolor: "background.paper",
+                                boxShadow: 24,
+                                p: 4,
+                                borderRadius: "16px",
+                                width: { xs: "90%", md: "600px" },
+                                maxHeight: "80vh",
+                                overflowY: "auto",
+                              }}
+                            >
+                              <CreatePost
+                                isOpen={true}
+                                onClose={() => navigate("/")}
+                                onPostCreated={() => navigate("/")}
+                              />
+                            </Box>
+                          </Modal>
+                        </Suspense>
+                      ) : (
+                        <Navigate to="/auth" replace />
+                      )
+                    }
+                  />
+                  <Route path="/edit-post/:id" element={<EditPostPage />} />
+                  <Route
+                    path="/:username"
+                    element={user ? <UserPage /> : <Navigate to="/auth" replace />}
+                  />
+                  <Route
+                    path="/admin/:username"
+                    element={
+                      user?.isAdmin ? (
+                        <AdminProfilePage />
+                      ) : (
+                        <Navigate to="/" replace />
+                      )
+                    }
+                  />
+                  <Route
+                    path="/edit-profile"
+                    element={
+                      user ? <EditProfile /> : <Navigate to="/auth" replace />
+                    }
+                  />
+                  <Route path="/:username/post/:pid" element={<PostPage />} />
+                  <Route
+                    path="/chat"
+                    element={user ? <ChatPage /> : <Navigate to="/auth" replace />}
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      user ? <SettingsPage /> : <Navigate to="/auth" replace />
+                    }
+                  />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      user ? <DashboardPage /> : <Navigate to="/auth" replace />
+                    }
+                  />
+                  <Route
+                    path="/search"
+                    element={user ? <SearchPage /> : <Navigate to="/auth" replace />}
+                  />
+                  <Route
+                    path="*"
+                    element={
+                      <Box sx={{ textAlign: "center", py: 4 }}>
+                        404 - Page Not Found
+                      </Box>
+                    }
+                  />
+                </Routes>
+              </Suspense>
+            </Container>
 
-      <Modal isOpen={isOpen} onClose={onClose}>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Create Post or Story</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <CreatePost onPostCreated={onClose} />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <Modal
+                open={isOpen}
+                onClose={handleClose}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Box
+                  sx={{
+                    bgcolor: "background.paper",
+                    boxShadow: 24,
+                    p: 4,
+                    borderRadius: "16px",
+                    width: { xs: "90%", md: "600px" },
+                    maxHeight: "80vh",
+                    overflowY: "auto",
+                  }}
+                >
+                  <CreatePost
+                    isOpen={isOpen}
+                    onClose={handleClose}
+                    onPostCreated={handleClose}
+                  />
+                </Box>
+              </Modal>
+            </Suspense>
 
-      {isSmallScreen && <BottomNavigation onOpenCreatePost={onOpen} />}
-    </Box>
+            {isSmallScreen && pathname !== "/auth" && user && (
+              <BottomNavigation onOpenCreatePost={handleOpen} />
+            )}
+          </Box>
+        </ErrorBoundary>
+      </SocketContextProvider>
+    </ThemeProvider>
   );
 }
 

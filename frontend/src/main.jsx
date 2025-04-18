@@ -2,49 +2,65 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
-import { ChakraProvider } from "@chakra-ui/react";
-import { mode } from "@chakra-ui/theme-tools";
-import { extendTheme } from "@chakra-ui/theme-utils";
-import { ColorModeScript } from "@chakra-ui/color-mode";
+
 import { BrowserRouter } from "react-router-dom";
 import { RecoilRoot } from "recoil";
 import { SocketContextProvider } from "./context/SocketContext.jsx";
 
-const styles = {
-	global: (props) => ({
-		body: {
-			color: mode("gray.800", "whiteAlpha.900")(props),
-			bg: mode("gray.100", "#101010")(props),
-		},
-	}),
-};
+// MUI
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import CssBaseline from "@mui/material/CssBaseline";
 
-const config = {
-	initialColorMode: "dark",
-	useSystemColorMode: true,
-};
+// AntD
+import { ConfigProvider } from "antd";
 
-const colors = {
-	gray: {
-		light: "#616161",
-		dark: "#1e1e1e",
-	},
-};
+// Notistack (Snackbar)
+import { SnackbarProvider } from "notistack";
 
-const theme = extendTheme({ config, styles, colors });
+// Custom MUI theme
+const muiTheme = createTheme({
+  palette: {
+    mode: "dark",
+    primary: {
+      main: "#9b59b6",
+    },
+    background: {
+      default: "#1e272e",
+      paper: "#263238",
+    },
+    text: {
+      primary: "#ffffff",
+    },
+  },
+  typography: {
+    fontFamily: "Roboto, sans-serif",
+  },
+});
+
+// Ant Design theme config
+const antThemeConfig = {
+  token: {
+    colorPrimary: "#9b59b6",
+    colorBgBase: "#1e272e",
+    colorTextBase: "#ffffff",
+  },
+};
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-	// React.StrictMode renders every component twice (in the initial render), only in development.
-	<React.StrictMode>
-		<RecoilRoot>
-			<BrowserRouter>
-				<ChakraProvider theme={theme}>
-					<ColorModeScript initialColorMode={theme.config.initialColorMode} />
-					<SocketContextProvider>
-						<App />
-					</SocketContextProvider>
-				</ChakraProvider>
-			</BrowserRouter>
-		</RecoilRoot>
-	</React.StrictMode>
+  <React.StrictMode>
+    <RecoilRoot>
+      <BrowserRouter>
+        <ConfigProvider theme={antThemeConfig}>
+          <ThemeProvider theme={muiTheme}>
+            <CssBaseline />
+            <SnackbarProvider maxSnack={3} autoHideDuration={3000}>
+              <SocketContextProvider>
+                <App />
+              </SocketContextProvider>
+            </SnackbarProvider>
+          </ThemeProvider>
+        </ConfigProvider>
+      </BrowserRouter>
+    </RecoilRoot>
+  </React.StrictMode>
 );

@@ -4,99 +4,153 @@ import { getRecipientSocketId, io } from "../socket/socket.js";
 import { v2 as cloudinary } from "cloudinary";
 
 async function sendMessage(req, res) {
-	try {
-		const { recipientId, message } = req.body;
-		let { img } = req.body;
-		const senderId = req.user._id;
+  try {
+    const { recipientId, message, img } = req.body;
+    const senderId = req.user._id;
 
-		let conversation = await Conversation.findOne({
-			participants: { $all: [senderId, recipientId] },
-		});
+    if (!recipientId || (!message && !img)) {
+      return res.status(400).json({ error: "Recipient ID and message or media required" });
+    }
 
-		if (!conversation) {
-			conversation = new Conversation({
-				participants: [senderId, recipientId],
-				lastMessage: {
-					text: message,
-					sender: senderId,
-				},
-			});
-			await conversation.save();
-		}
+    let conversation = await Conversation.findOne({
+      participants: { $all: [senderId, recipientId] },
+    });
 
-		if (img) {
-			const uploadedResponse = await cloudinary.uploader.upload(img);
-			img = uploadedResponse.secure_url;
-		}
+    if (!conversation) {
+      conversation = new Conversation({
+        participants: [senderId, recipientId],
+        lastMessage: { text: message || "Media", sender: senderId, seen: false },
+      });
+      await conversation.save();
+    }
 
-		const newMessage = new Message({
-			conversationId: conversation._id,
-			sender: senderId,
-			text: message,
-			img: img || "",
-		});
+    const newMessage = new Message({
+      conversationId: conversation._id,
+      sender: senderId,
+      text: message,
+      img: img || "",
+      status: "sent",
+    });
 
-		await Promise.all([
-			newMessage.save(),
-			conversation.updateOne({
-				lastMessage: {
-					text: message,
-					sender: senderId,
-				},
-			}),
-		]);
+    await newMessage.save();
 
-		const recipientSocketId = getRecipientSocketId(recipientId);
-		if (recipientSocketId) {
-			io.to(recipientSocketId).emit("newMessage", newMessage);
-		}
+    await conversation.updateOne({
+      lastMessage: { text: message || "Media", sender: senderId, seen: false },
+    });
 
-		res.status(201).json(newMessage);
-	} catch (error) {
-		res.status(500).json({ error: error.message });
-	}
+    const populatedMessage = await Message.findById(newMessage._id)
+      .populate("sender", "username profilePic")
+      .lean();
+
+    const recipientSocketId = getRecipientSocketId(recipientId);
+    const senderSocketId = getRecipientSocketId(senderId);
+
+    console.log("Sending message:", {
+      messageId: newMessage._id,
+      conversationId: conversation._id,
+      recipientSocketId,
+      senderSocketId,
+    });
+
+    if (recipientSocketId) {
+      await Message.updateOne({ _id: newMessage._id }, { status: "received" });
+      populatedMessage.status = "received";
+      io.to(recipientSocketId).emit("newMessage", {
+        ...populatedMessage,
+        conversationId: conversation._id,
+        recipientId,
+      });
+      io.to(recipientSocketId).emit("newMessageNotification", {
+        conversationId: conversation._id,
+        sender: populatedMessage.sender,
+        text: message,
+        img,
+        messageId: newMessage._id,
+      });
+    }
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("newMessage", {
+        ...populatedMessage,
+        conversationId: conversation._id,
+        recipientId,
+      });
+    }
+
+    res.status(201).json({
+      ...populatedMessage,
+      conversationId: conversation._id,
+    });
+  } catch (error) {
+    console.error("Send message error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
 }
 
 async function getMessages(req, res) {
-	const { otherUserId } = req.params;
-	const userId = req.user._id;
-	try {
-		const conversation = await Conversation.findOne({
-			participants: { $all: [userId, otherUserId] },
-		});
+  const { otherUserId } = req.params;
+  const userId = req.user._id;
+  try {
+    const conversation = await Conversation.findOne({
+      participants: { $all: [userId, otherUserId] },
+    });
 
-		if (!conversation) {
-			return res.status(404).json({ error: "Conversation not found" });
-		}
+    if (!conversation) {
+      return res.status(200).json([]);
+    }
 
-		const messages = await Message.find({
-			conversationId: conversation._id,
-		}).sort({ createdAt: 1 });
+    const messages = await Message.find({
+      conversationId: conversation._id,
+    })
+      .populate("sender", "username profilePic")
+      .sort({ createdAt: 1 })
+      .lean();
 
-		res.status(200).json(messages);
-	} catch (error) {
-		res.status(500).json({ error: error.message });
-	}
+    const updatedMessages = await Message.updateMany(
+      { conversationId: conversation._id, sender: otherUserId, seen: false },
+      { $set: { seen: true, status: "seen" } },
+      { multi: true }
+    );
+
+    if (updatedMessages.modifiedCount > 0) {
+      const recipientSocketId = getRecipientSocketId(otherUserId);
+      if (recipientSocketId) {
+        const seenMessages = messages
+          .filter((msg) => msg.sender._id === otherUserId && !msg.seen)
+          .map((msg) => msg._id.toString());
+        console.log("Emitting messagesSeen:", { conversationId: conversation._id, seenMessages });
+        io.to(recipientSocketId).emit("messagesSeen", {
+          conversationId: conversation._id,
+          seenMessages,
+        });
+      }
+    }
+
+    res.status(200).json(messages);
+  } catch (error) {
+    console.error("Get messages error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
 }
 
 async function getConversations(req, res) {
-	const userId = req.user._id;
-	try {
-		const conversations = await Conversation.find({ participants: userId }).populate({
-			path: "participants",
-			select: "username profilePic",
-		});
+  const userId = req.user._id;
+  try {
+    const conversations = await Conversation.find({ participants: userId }).populate({
+      path: "participants",
+      select: "username profilePic",
+    });
 
-		// remove the current user from the participants array
-		conversations.forEach((conversation) => {
-			conversation.participants = conversation.participants.filter(
-				(participant) => participant._id.toString() !== userId.toString()
-			);
-		});
-		res.status(200).json(conversations);
-	} catch (error) {
-		res.status(500).json({ error: error.message });
-	}
+    conversations.forEach((conversation) => {
+      conversation.participants = conversation.participants.filter(
+        (participant) => participant._id.toString() !== userId.toString()
+      );
+    });
+    res.status(200).json(conversations);
+  } catch (error) {
+    console.error("Get conversations error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
 }
 
 export { sendMessage, getMessages, getConversations };

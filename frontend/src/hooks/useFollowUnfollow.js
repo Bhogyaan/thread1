@@ -1,53 +1,65 @@
-import { useState } from "react";
-import useShowToast from "./useShowToast";
+import { useState, useCallback } from "react";
+import { useRecoilState, useRecoilValue } from "recoil";
 import userAtom from "../atoms/userAtom";
-import { useRecoilValue } from "recoil";
+import useShowToast from "../hooks/useShowToast";
 
 const useFollowUnfollow = (user) => {
-	const currentUser = useRecoilValue(userAtom);
-	const [following, setFollowing] = useState(user.followers.includes(currentUser?._id));
-	const [updating, setUpdating] = useState(false);
-	const showToast = useShowToast();
+  const [following, setFollowing] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const currentUser = useRecoilValue(userAtom);
+  const showToast = useShowToast();
 
-	const handleFollowUnfollow = async () => {
-		if (!currentUser) {
-			showToast("Error", "Please login to follow", "error");
-			return;
-		}
-		if (updating) return;
+  const checkFollowing = useCallback(() => {
+    if (!currentUser || !user?._id) {
+      console.warn("User ID is missing in useFollowUnfollow");
+      return false;
+    }
+    return currentUser.following?.includes(user._id) || false;
+  }, [currentUser, user?._id]);
 
-		setUpdating(true);
-		try {
-			const res = await fetch(`/api/users/follow/${user._id}`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-			});
-			const data = await res.json();
-			if (data.error) {
-				showToast("Error", data.error, "error");
-				return;
-			}
+  useState(() => {
+    setFollowing(checkFollowing());
+  }, [checkFollowing]);
 
-			if (following) {
-				showToast("Success", `Unfollowed ${user.name}`, "success");
-				user.followers.pop(); // simulate removing from followers
-			} else {
-				showToast("Success", `Followed ${user.name}`, "success");
-				user.followers.push(currentUser?._id); // simulate adding to followers
-			}
-			setFollowing(!following);
+  const handleFollowUnfollow = async () => {
+    if (!currentUser?._id || !user?._id) {
+      showToast("Error", "User ID is missing", "error");
+      console.error("User ID is missing in useFollowUnfollow");
+      return;
+    }
 
-			console.log(data);
-		} catch (error) {
-			showToast("Error", error, "error");
-		} finally {
-			setUpdating(false);
-		}
-	};
+    setUpdating(true);
+    try {
+      const res = await fetch(`/api/users/${user._id}/follow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast("Error", data.error, "error");
+        return;
+      }
 
-	return { handleFollowUnfollow, updating, following };
+      if (data.following) {
+        showToast("Success", `You are now following ${user.username}`, "success");
+        setFollowing(true);
+        // Update currentUser state in Recoil
+        currentUser.following = [...currentUser.following, user._id];
+      } else {
+        showToast("Success", `You have unfollowed ${user.username}`, "success");
+        setFollowing(false);
+        // Update currentUser state in Recoil
+        currentUser.following = currentUser.following.filter((id) => id !== user._id);
+      }
+    } catch (error) {
+      showToast("Error", error.message, "error");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  return { handleFollowUnfollow, updating, following };
 };
 
 export default useFollowUnfollow;

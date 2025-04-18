@@ -5,6 +5,9 @@ const postsAtom = atom({
 	default: {
 		posts: [],
 		stories: [],
+		bookmarks: [],
+		suggestedPosts: [],
+		
 	},
 });
 

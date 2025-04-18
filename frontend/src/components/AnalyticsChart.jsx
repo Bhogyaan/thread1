@@ -1,25 +1,57 @@
-import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import React from 'react';
+import { Pie, Bar } from '@ant-design/charts';
+import { motion } from 'framer-motion';
+import Skeleton from 'react-loading-skeleton';
+import 'react-loading-skeleton/dist/skeleton.css';
+import { Box, Typography } from '@mui/material';
 
-const AnalyticsChart = ({ type, data }) => {
-	if (type === "pie") {
+const AnalyticsChart = ({ type, data, isLoading }) => {
+	if (isLoading) {
 		return (
-			<PieChart width={400} height={400}>
-				<Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label />
-				<Tooltip />
-				<Legend />
-			</PieChart>
+			<Box display="flex" justifyContent="center" alignItems="center" height="400px">
+				<Skeleton width={400} height={300} />
+			</Box>
 		);
 	}
 
-	if (type === "bar") {
+	if (type === 'pie') {
 		return (
-			<BarChart width={400} height={300} data={data}>
-				<XAxis dataKey="name" />
-				<YAxis />
-				<Tooltip />
-				<Legend />
-				<Bar dataKey="value" fill="#8884d8" />
-			</BarChart>
+			<motion.div
+				initial={{ opacity: 0 }}
+				animate={{ opacity: 1 }}
+				transition={{ duration: 1 }}
+			>
+				<Pie
+					data={data}
+					angleField="value"
+					colorField="name"
+					radius={0.8}
+					label={{
+						type: 'outer',
+						content: '{name} {value}',
+					}}
+				/>
+				<Typography variant="caption">Pie Chart</Typography>
+			</motion.div>
+		);
+	}
+
+	if (type === 'bar') {
+		return (
+			<motion.div
+				initial={{ opacity: 0 }}
+				animate={{ opacity: 1 }}
+				transition={{ duration: 1 }}
+			>
+				<Bar
+					data={data}
+					xField="name"
+					yField="value"
+					seriesField="name"
+					legend={{ position: 'top-left' }}
+				/>
+				<Typography variant="caption">Bar Chart</Typography>
+			</motion.div>
 		);
 	}
 

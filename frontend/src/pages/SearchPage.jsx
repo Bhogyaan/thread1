@@ -1,17 +1,27 @@
-import { Box, Text, Input, Button, VStack, Spinner } from "@chakra-ui/react";
 import { useState } from "react";
-import useShowToast from "../hooks/useShowToast";
-import Post from "../components/Post"; // Reuse your Post component
+import { motion } from "framer-motion";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Container,
+  Grid,
+  InputAdornment,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { Search as SearchIcon } from "@mui/icons-material";
+import { message } from "antd";
+import Post from "../components/Post";
 
 const SearchPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const showToast = useShowToast();
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      showToast("Error", "Please enter a username to search", "error");
+      message.error("Please enter a username to search");
       return;
     }
 
@@ -20,13 +30,13 @@ const SearchPage = () => {
       const res = await fetch(`/api/posts/user/${searchQuery}`);
       const data = await res.json();
       if (data.error) {
-        showToast("Error", data.error, "error");
+        message.error(data.error);
         setSearchResults([]);
         return;
       }
-      setSearchResults(data); // Array of posts
+      setSearchResults(data);
     } catch (error) {
-      showToast("Error", error.message, "error");
+      message.error(error.message);
       setSearchResults([]);
     } finally {
       setLoading(false);
@@ -34,40 +44,77 @@ const SearchPage = () => {
   };
 
   return (
-    <Box p={4}>
-      <Text fontSize="xl" fontWeight="bold" mb={4}>
-        Search Posts by User
-      </Text>
-      <VStack spacing={4} align="stretch">
-        <Box>
-          <Input
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+    >
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Typography variant="h4" gutterBottom textAlign="center">
+          Search Posts by User
+        </Typography>
+
+        <Box
+          sx={{
+            display: "flex",
+            gap: 2,
+            mb: 4,
+            flexDirection: { xs: "column", sm: "row" },
+          }}
+        >
+          <TextField
+            fullWidth
             placeholder="Enter username to search posts..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
           />
-          <Button mt={2} colorScheme="blue" onClick={handleSearch} isLoading={loading}>
-            Search
+          <Button
+            variant="contained"
+            onClick={handleSearch}
+            disabled={loading}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
+            {loading ? <CircularProgress size={24} /> : "Search"}
           </Button>
         </Box>
 
         {loading && (
-          <Spinner size="lg" alignSelf="center" />
+          <Box display="flex" justifyContent="center" my={4}>
+            <CircularProgress />
+          </Box>
         )}
 
         {!loading && searchResults.length === 0 && searchQuery && (
-          <Text>No posts found for "{searchQuery}"</Text>
+          <Typography textAlign="center" my={4}>
+            No posts found for "{searchQuery}"
+          </Typography>
         )}
 
         {!loading && searchResults.length > 0 && (
-          <VStack spacing={4}>
+          <Grid container spacing={3}>
             {searchResults.map((post) => (
-              <Post key={post._id} post={post} postedBy={post.postedBy} />
+              <Grid item xs={12} key={post._id}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Post post={post} postedBy={post.postedBy} />
+                </motion.div>
+              </Grid>
             ))}
-          </VStack>
+          </Grid>
         )}
-      </VStack>
-    </Box>
+      </Container>
+    </motion.div>
   );
 };
 

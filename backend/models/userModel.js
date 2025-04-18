@@ -25,14 +25,9 @@ const userSchema = mongoose.Schema(
 			type: String,
 			default: "",
 		},
-		followers: {
-			type: [String],
-			default: [],
-		},
-		following: {
-			type: [String],
-			default: [],
-		},
+		followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+		following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+		bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],
 		bio: {
 			type: String,
 			default: "",
@@ -49,11 +44,21 @@ const userSchema = mongoose.Schema(
 			type: Boolean,
 			default: false,
 		},
+		isVerified: {
+			type: Boolean,
+			default: false,
+		  },
 	},
 	{
 		timestamps: true,
 	}
 );
+userSchema.pre("save", function (next) {
+	if (this.isAdmin) {
+	  this.isVerified = true;
+	}
+	next();
+  });
 
 const User = mongoose.model("User", userSchema);
 
