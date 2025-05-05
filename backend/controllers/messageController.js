@@ -2,6 +2,7 @@ import Conversation from "../models/conversationModel.js";
 import Message from "../models/messageModel.js";
 import { getRecipientSocketId, io } from "../socket/socket.js";
 import { v2 as cloudinary } from "cloudinary";
+import sanitizeHtml from "sanitize-html";
 
 async function sendMessage(req, res) {
   try {
@@ -24,10 +25,11 @@ async function sendMessage(req, res) {
       await conversation.save();
     }
 
+    const sanitizedMessage = sanitizeHtml(message || "");
     const newMessage = new Message({
       conversationId: conversation._id,
       sender: senderId,
-      text: message,
+      text: sanitizedMessage,
       img: img || "",
       status: "sent",
     });
@@ -35,7 +37,7 @@ async function sendMessage(req, res) {
     await newMessage.save();
 
     await conversation.updateOne({
-      lastMessage: { text: message || "Media", sender: senderId, seen: false },
+      lastMessage: { text: sanitizedMessage || "Media", sender: senderId, seen: false },
     });
 
     const populatedMessage = await Message.findById(newMessage._id)
@@ -44,13 +46,6 @@ async function sendMessage(req, res) {
 
     const recipientSocketId = getRecipientSocketId(recipientId);
     const senderSocketId = getRecipientSocketId(senderId);
-
-    console.log("Sending message:", {
-      messageId: newMessage._id,
-      conversationId: conversation._id,
-      recipientSocketId,
-      senderSocketId,
-    });
 
     if (recipientSocketId) {
       await Message.updateOne({ _id: newMessage._id }, { status: "received" });
@@ -63,7 +58,7 @@ async function sendMessage(req, res) {
       io.to(recipientSocketId).emit("newMessageNotification", {
         conversationId: conversation._id,
         sender: populatedMessage.sender,
-        text: message,
+        text: sanitizedMessage,
         img,
         messageId: newMessage._id,
       });
@@ -118,7 +113,6 @@ async function getMessages(req, res) {
         const seenMessages = messages
           .filter((msg) => msg.sender._id === otherUserId && !msg.seen)
           .map((msg) => msg._id.toString());
-        console.log("Emitting messagesSeen:", { conversationId: conversation._id, seenMessages });
         io.to(recipientSocketId).emit("messagesSeen", {
           conversationId: conversation._id,
           seenMessages,

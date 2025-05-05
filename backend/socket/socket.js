@@ -3,7 +3,7 @@ import http from "http";
 import express from "express";
 import Message from "../models/messageModel.js";
 import Conversation from "../models/conversationModel.js";
-import Post from "../models/postModel.js";
+import { Post, Reply } from "../models/postModel.js";
 import User from "../models/userModel.js";
 
 const app = express();
@@ -29,9 +29,7 @@ const userSocketMap = {};
 const typingUsers = new Map();
 
 export const getRecipientSocketId = (recipientId) => {
-  const socketId = userSocketMap[recipientId];
-  console.log(`getRecipientSocketId for ${recipientId}: ${socketId || "not found"}`);
-  return socketId;
+  return userSocketMap[recipientId];
 };
 
 io.on("connection", (socket) => {
@@ -40,7 +38,7 @@ io.on("connection", (socket) => {
 
   if (userId && userId !== "undefined") {
     userSocketMap[userId] = socket.id;
-    console.log(`Mapped user ${userId} to socket ${socket.id}`);
+    console.log("Updated userSocketMap:", userSocketMap);
   } else {
     console.warn("Invalid userId on connection:", userId);
     socket.disconnect(true);
@@ -50,50 +48,29 @@ io.on("connection", (socket) => {
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
   socket.on("joinPostRoom", (postId) => {
-    if (!postId) {
-      console.warn("Invalid postId for joinPostRoom:", postId);
-      return;
-    }
-    socket.join(`post:${postId}`);
-    console.log(`User ${userId} joined post room: post:${postId}`);
+    if (!postId) return;
+    socket.join(`posts:${postId}`);
   });
 
   socket.on("leavePostRoom", (postId) => {
-    if (!postId) {
-      console.warn("Invalid postId for leavePostRoom:", postId);
-      return;
-    }
-    socket.leave(`post:${postId}`);
-    console.log(`User ${userId} left post room: post:${postId}`);
+    if (!postId) return;
+    socket.leave(`posts:${postId}`);
   });
 
   socket.on("newPost", async (post) => {
     try {
-      if (!post?._id) {
-        console.warn("Invalid post data:", post);
-        return;
-      }
+      if (!post?._id) return;
       const populatedPost = await Post.findById(post._id)
         .populate("postedBy", "username profilePic")
         .lean();
-      if (!populatedPost) {
-        console.warn(`Post not found: ${post._id}`);
-        return;
-      }
+      if (!populatedPost) return;
       const user = await User.findById(post.postedBy).select("following").lean();
-      if (!user) {
-        console.warn(`User not found: ${post.postedBy}`);
-        return;
-      }
+      if (!user) return;
       const followerIds = [...(user.following || []), post.postedBy.toString()];
       followerIds.forEach((followerId) => {
         const socketId = getRecipientSocketId(followerId);
-        if (socketId) {
-          console.log(`Emitting newPost to ${followerId}:`, populatedPost._id);
-          io.to(socketId).emit("newPost", populatedPost);
-        }
+        if (socketId) io.to(socketId).emit("newPost", populatedPost);
       });
-      console.log(`Emitting newFeedPost: ${populatedPost._id}`);
       io.emit("newFeedPost", populatedPost);
     } catch (error) {
       console.error("Error broadcasting new post:", error.message);
@@ -102,21 +79,14 @@ io.on("connection", (socket) => {
 
   socket.on("newComment", async ({ postId, comment }) => {
     try {
-      if (!postId || !comment) {
-        console.warn("Invalid newComment data:", { postId, comment });
-        return;
-      }
+      if (!postId || !comment) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .populate("comments.userId", "username profilePic")
         .populate("comments.replies.userId", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting newComment to post:${postId}`);
-      io.to(`post:${postId}`).emit("newComment", { postId, comment, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("newComment", { postId, comment, post });
     } catch (error) {
       console.error("Error broadcasting new comment:", error.message);
     }
@@ -124,21 +94,14 @@ io.on("connection", (socket) => {
 
   socket.on("newReply", async ({ postId, commentId, reply }) => {
     try {
-      if (!postId || !commentId || !reply) {
-        console.warn("Invalid newReply data:", { postId, commentId, reply });
-        return;
-      }
+      if (!postId || !commentId || !reply) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .populate("comments.userId", "username profilePic")
         .populate("comments.replies.userId", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting newReply to post:${postId}`);
-      io.to(`post:${postId}`).emit("newReply", { postId, commentId, reply, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("newReply", { postId, commentId, reply, post });
     } catch (error) {
       console.error("Error broadcasting new reply:", error.message);
     }
@@ -146,19 +109,12 @@ io.on("connection", (socket) => {
 
   socket.on("likeUnlikePost", async ({ postId, userId, likes }) => {
     try {
-      if (!postId || !userId) {
-        console.warn("Invalid likeUnlikePost data:", { postId, userId });
-        return;
-      }
+      if (!postId || !userId) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting likeUnlikePost to post:${postId}`);
-      io.to(`post:${postId}`).emit("likeUnlikePost", { postId, userId, likes, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("likeUnlikePost", { postId, userId, likes, post });
     } catch (error) {
       console.error("Error broadcasting like/unlike:", error.message);
     }
@@ -166,21 +122,14 @@ io.on("connection", (socket) => {
 
   socket.on("likeUnlikeComment", async ({ postId, commentId, userId, likes }) => {
     try {
-      if (!postId || !commentId || !userId) {
-        console.warn("Invalid likeUnlikeComment data:", { postId, commentId, userId });
-        return;
-      }
+      if (!postId || !commentId || !userId) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .populate("comments.userId", "username profilePic")
         .populate("comments.replies.userId", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting likeUnlikeComment to post:${postId}`);
-      io.to(`post:${postId}`).emit("likeUnlikeComment", { postId, commentId, userId, likes, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("likeUnlikeComment", { postId, commentId, userId, likes, post });
     } catch (error) {
       console.error("Error broadcasting comment like/unlike:", error.message);
     }
@@ -188,21 +137,14 @@ io.on("connection", (socket) => {
 
   socket.on("likeUnlikeReply", async ({ postId, commentId, replyId, userId, likes }) => {
     try {
-      if (!postId || !commentId || !replyId || !userId) {
-        console.warn("Invalid likeUnlikeReply data:", { postId, commentId, replyId, userId });
-        return;
-      }
+      if (!postId || !commentId || !replyId || !userId) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .populate("comments.userId", "username profilePic")
         .populate("comments.replies.userId", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting likeUnlikeReply to post:${postId}`);
-      io.to(`post:${postId}`).emit("likeUnlikeReply", { postId, commentId, replyId, userId, likes, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("likeUnlikeReply", { postId, commentId, replyId, userId, likes, post });
     } catch (error) {
       console.error("Error broadcasting reply like/unlike:", error.message);
     }
@@ -210,57 +152,69 @@ io.on("connection", (socket) => {
 
   socket.on("editComment", async ({ postId, commentId, text }) => {
     try {
-      if (!postId || !commentId || !text) {
-        console.warn("Invalid editComment data:", { postId, commentId, text });
-        return;
-      }
+      if (!postId || !commentId || !text) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .populate("comments.userId", "username profilePic")
         .populate("comments.replies.userId", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting editComment to post:${postId}`);
-      io.to(`post:${postId}`).emit("editComment", { postId, commentId, text, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("editComment", { postId, commentId, text, post });
     } catch (error) {
       console.error("Error broadcasting edit comment:", error.message);
     }
   });
 
-  socket.on("deleteComment", async ({ postId, commentId }) => {
+  socket.on("editReply", async ({ postId, commentId, replyId, text }) => {
     try {
-      if (!postId || !commentId) {
-        console.warn("Invalid deleteComment data:", { postId, commentId });
-        return;
-      }
+      if (!postId || !commentId || !replyId || !text) return;
       const post = await Post.findById(postId)
         .populate("postedBy", "username profilePic")
         .populate("comments.userId", "username profilePic")
         .populate("comments.replies.userId", "username profilePic")
         .lean();
-      if (!post) {
-        console.warn(`Post not found: ${postId}`);
-        return;
-      }
-      console.log(`Emitting deleteComment to post:${postId}`);
-      io.to(`post:${postId}`).emit("deleteComment", { postId, commentId, post });
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("editReply", { postId, commentId, replyId, text, post });
+    } catch (error) {
+      console.error("Error broadcasting edit reply:", error.message);
+    }
+  });
+
+  socket.on("deleteComment", async ({ postId, commentId }) => {
+    try {
+      if (!postId || !commentId) return;
+      const post = await Post.findById(postId)
+        .populate("postedBy", "username profilePic")
+        .populate("comments.userId", "username profilePic")
+        .populate("comments.replies.userId", "username profilePic")
+        .lean();
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("deleteComment", { postId, commentId, post });
     } catch (error) {
       console.error("Error broadcasting delete comment:", error.message);
     }
   });
 
-  socket.on("postDeleted", async ({ postId, userId }) => {
+  socket.on("deleteReply", async ({ postId, commentId, replyId }) => {
     try {
-      if (!postId || !userId) {
-        console.warn("Invalid postDeleted data:", { postId, userId });
-        return;
-      }
-      console.log(`Emitting postDeleted to post:${postId} and feed`);
-      io.to(`post:${postId}`).emit("postDeleted", { postId, userId });
-      io.emit("postDeletedFromFeed", { postId });
+      if (!postId || !commentId || !replyId) return;
+      const post = await Post.findById(postId)
+        .populate("postedBy", "username profilePic")
+        .populate("comments.userId", "username profilePic")
+        .populate("comments.replies.userId", "username profilePic")
+        .lean();
+      if (!post) return;
+      io.to(`posts:${postId}`).emit("deleteReply", { postId, commentId, replyId, post });
+    } catch (error) {
+      console.error("Error broadcasting delete reply:", error.message);
+    }
+  });
+
+  socket.on("postsDeleted", async ({ postId, userId }) => {
+    try {
+      if (!postId || !userId) return;
+      io.to(`posts:${postId}`).emit("postsDeleted", { postId, userId });
+      io.emit("postsDeletedFromFeed", { postId });
     } catch (error) {
       console.error("Error broadcasting post deleted:", error.message);
     }
@@ -269,25 +223,23 @@ io.on("connection", (socket) => {
   socket.on("newMessage", async (message) => {
     try {
       if (!message?.recipientId || !message?.sender?._id || !message?.conversationId) {
-        console.warn("Invalid newMessage data:", message);
+        console.warn("Invalid message data:", message);
         return;
       }
+      console.log("Broadcasting newMessage:", message);
       const recipientSocketId = getRecipientSocketId(message.recipientId);
       const senderSocketId = getRecipientSocketId(message.sender._id);
-      console.log(`Broadcasting newMessage: ${message._id}`, {
-        recipientSocketId,
-        senderSocketId,
-        conversationId: message.conversationId,
-      });
       if (recipientSocketId) {
+        console.log(`Emitting to recipient: ${recipientSocketId}`);
         io.to(recipientSocketId).emit("newMessage", message);
       } else {
-        console.warn(`Recipient ${message.recipientId} not connected`);
+        console.warn(`Recipient socket not found: ${message.recipientId}`);
       }
       if (senderSocketId) {
+        console.log(`Emitting to sender: ${senderSocketId}`);
         io.to(senderSocketId).emit("newMessage", message);
       } else {
-        console.warn(`Sender ${message.sender._id} not connected`);
+        console.warn(`Sender socket not found: ${message.sender._id}`);
       }
     } catch (error) {
       console.error("Error broadcasting new message:", error.message);
@@ -309,13 +261,11 @@ io.on("connection", (socket) => {
         console.warn(`Message not found: ${messageId}`);
         return;
       }
-      const senderSocketId = getRecipientSocketId(recipientId);
-      if (senderSocketId) {
-        console.log(`Emitting messageDelivered: ${messageId} to ${senderSocketId}`);
-        io.to(senderSocketId).emit("messageDelivered", { messageId, conversationId });
-      } else {
-        console.warn(`Sender ${recipientId} not connected for messageDelivered`);
-      }
+      console.log("Broadcasting messageDelivered:", { messageId, conversationId });
+      const senderSocketId = getRecipientSocketId(updatedMessage.sender._id);
+      const recipientSocketId = getRecipientSocketId(recipientId);
+      if (senderSocketId) io.to(senderSocketId).emit("messageDelivered", { messageId, conversationId });
+      if (recipientSocketId) io.to(recipientSocketId).emit("messageDelivered", { messageId, conversationId });
     } catch (error) {
       console.error("Error broadcasting message delivered:", error.message);
     }
@@ -339,10 +289,7 @@ io.on("connection", (socket) => {
         sender: { $ne: userId },
       }).lean();
 
-      if (!messages.length) {
-        console.log(`No unseen messages for conversation: ${conversationId}`);
-        return;
-      }
+      if (!messages.length) return;
 
       const seenMessageIds = messages.map((msg) => msg._id.toString());
       await Message.updateMany(
@@ -355,22 +302,18 @@ io.on("connection", (socket) => {
         { $set: { "lastMessage.seen": true } }
       );
 
+      console.log("Broadcasting messagesSeen:", { conversationId, seenMessageIds });
       const participantIds = conversation.participants.map((p) => p.toString());
       participantIds.forEach((participantId) => {
         const socketId = getRecipientSocketId(participantId);
-        if (socketId) {
-          console.log(`Emitting messagesSeen to ${socketId}:`, { conversationId, seenMessages: seenMessageIds });
-          io.to(socketId).emit("messagesSeen", {
-            conversationId,
-            seenMessages: seenMessageIds,
-          });
-        }
+        if (socketId) io.to(socketId).emit("messagesSeen", { conversationId, seenMessages: seenMessageIds });
       });
     } catch (error) {
       console.error("Error marking messages as seen:", error.message);
     }
   });
 
+  let typingTimeout;
   socket.on("typing", async ({ conversationId }) => {
     try {
       if (!conversationId || !userId) {
@@ -387,20 +330,19 @@ io.on("connection", (socket) => {
         .filter((p) => p.toString() !== userId)
         .map((p) => p.toString());
 
-      if (!typingUsers.has(conversationId)) {
-        typingUsers.set(conversationId, new Set());
-      }
-      const conversationTyping = typingUsers.get(conversationId);
-      if (!conversationTyping.has(userId)) {
-        conversationTyping.add(userId);
-        recipientIds.forEach((recipientId) => {
-          const recipientSocketId = getRecipientSocketId(recipientId);
-          if (recipientSocketId) {
-            console.log(`Emitting typing to ${recipientSocketId}:`, { conversationId, userId });
-            io.to(recipientSocketId).emit("typing", { conversationId, userId });
-          }
-        });
-      }
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(async () => {
+        if (!typingUsers.has(conversationId)) typingUsers.set(conversationId, new Set());
+        const conversationTyping = typingUsers.get(conversationId);
+        if (!conversationTyping.has(userId)) {
+          conversationTyping.add(userId);
+          console.log("Broadcasting typing:", { conversationId, userId });
+          recipientIds.forEach((recipientId) => {
+            const recipientSocketId = getRecipientSocketId(recipientId);
+            if (recipientSocketId) io.to(recipientSocketId).emit("typing", { conversationId, userId });
+          });
+        }
+      }, 300);
     } catch (error) {
       console.error("Error broadcasting typing:", error.message);
     }
@@ -427,12 +369,10 @@ io.on("connection", (socket) => {
         conversationTyping.delete(userId);
         if (conversationTyping.size === 0) {
           typingUsers.delete(conversationId);
+          console.log("Broadcasting stopTyping:", { conversationId, userId });
           recipientIds.forEach((recipientId) => {
             const recipientSocketId = getRecipientSocketId(recipientId);
-            if (recipientSocketId) {
-              console.log(`Emitting stopTyping to ${recipientSocketId}:`, { conversationId, userId });
-              io.to(recipientSocketId).emit("stopTyping", { conversationId, userId });
-            }
+            if (recipientSocketId) io.to(recipientSocketId).emit("stopTyping", { conversationId, userId });
           });
         }
       }
@@ -441,16 +381,23 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("userFollowed", (data) => {
+    console.log(`Broadcasting userFollowed: ${data.followedId} by ${data.follower._id}`);
+  });
+
+  socket.on("userUnfollowed", (data) => {
+    console.log(`Broadcasting userUnfollowed: ${data.unfollowedId} by ${data.followerId}`);
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
     if (userId && userSocketMap[userId] === socket.id) {
       delete userSocketMap[userId];
+      console.log("Updated userSocketMap:", userSocketMap);
       typingUsers.forEach((conversationTyping, conversationId) => {
         if (conversationTyping.has(userId)) {
           conversationTyping.delete(userId);
-          if (conversationTyping.size === 0) {
-            typingUsers.delete(conversationId);
-          }
+          if (conversationTyping.size === 0) typingUsers.delete(conversationId);
           Conversation.findById(conversationId)
             .lean()
             .then((conversation) => {
@@ -460,10 +407,7 @@ io.on("connection", (socket) => {
                   .map((p) => p.toString());
                 recipientIds.forEach((recipientId) => {
                   const recipientSocketId = getRecipientSocketId(recipientId);
-                  if (recipientSocketId) {
-                    console.log(`Emitting stopTyping on disconnect to ${recipientSocketId}:`, { conversationId, userId });
-                    io.to(recipientSocketId).emit("stopTyping", { conversationId, userId });
-                  }
+                  if (recipientSocketId) io.to(recipientSocketId).emit("stopTyping", { conversationId, userId });
                 });
               }
             })
@@ -472,7 +416,6 @@ io.on("connection", (socket) => {
             });
         }
       });
-      console.log(`Emitting getOnlineUsers after disconnect: ${Object.keys(userSocketMap)}`);
       io.emit("getOnlineUsers", Object.keys(userSocketMap));
     }
   });

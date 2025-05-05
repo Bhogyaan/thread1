@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useRecoilValue } from "recoil";
+import { useRecoilValue, useSetRecoilState } from "recoil";
 import userAtom from "../atoms/userAtom";
+import { selectedConversationAtom } from "../atoms/messagesAtom";
 import useShowToast from "../hooks/useShowToast";
 
-// MUI Imports
 import {
   Box,
   IconButton,
@@ -13,34 +13,31 @@ import {
   Avatar,
 } from "@mui/material";
 import {
-  Home as HomeIcon,
-  Search as SearchIcon,
-  PersonOutline as PersonIcon,
-  Chat as ChatIcon,
-  AddBox as AddBoxIcon,
+  HomeOutlined as HomeIcon,
+  SearchOutlined as SearchIcon,
+  AccountCircleOutlined as PersonIcon,
+  ForumOutlined as ChatIcon,
+  AddBoxOutlined as AddCircleIcon,
 } from "@mui/icons-material";
 
-// Antd Imports
 import { Flex as AntdFlex } from "antd";
 
-// Framer Motion Imports
 import { motion } from "framer-motion";
 
 const BottomNav = ({ onOpenCreatePost }) => {
-  const [loading, setLoading] = useState(true); // Skeleton loading state
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
   const user = useRecoilValue(userAtom);
   const showToast = useShowToast();
+  const setSelectedConversation = useSetRecoilState(selectedConversationAtom);
 
-  // Simulate loading for demo purposes
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 2000); // 2-second loading simulation
+    const timer = setTimeout(() => setLoading(false), 1000);
     return () => clearTimeout(timer);
   }, []);
 
-  // Only show on small screens (below 500px)
-  const isBelow500px = window.innerWidth <= 500; // Simplified media query for demo
+  const isBelow500px = window.innerWidth <= 500;
   if (!isBelow500px) return null;
 
   const isActive = (path) => location.pathname === path;
@@ -61,6 +58,18 @@ const BottomNav = ({ onOpenCreatePost }) => {
     onOpenCreatePost();
   };
 
+  const handleChatClick = () => {
+    setSelectedConversation({
+      _id: "",
+      userId: "",
+      username: "",
+      userProfilePic: "",
+      isOnline: false,
+      mock: false,
+    });
+    navigate("/chat");
+  };
+
   return (
     <Box
       sx={{
@@ -68,11 +77,13 @@ const BottomNav = ({ onOpenCreatePost }) => {
         bottom: 0,
         left: 0,
         right: 0,
-        bgcolor: "#1A202C", // Mimics gray.800
+        bgcolor: "#080201",
         color: "white",
-        py: 1,
+        py: 1.5,
         zIndex: 10,
-        boxShadow: "0 -2px 10px rgba(0,0,0,0.2)",
+        boxShadow: "0 -2px 15px rgba(0,0,0,0.3)",
+        borderTopLeftRadius: "20px",
+        borderTopRightRadius: "20px",
       }}
     >
       {loading ? (
@@ -81,8 +92,9 @@ const BottomNav = ({ onOpenCreatePost }) => {
             <Skeleton
               key={index}
               variant="circular"
-              width={48}
-              height={48}
+              width={56}
+              height={56}
+              sx={{ bgcolor: "#334155" }}
             />
           ))}
         </AntdFlex>
@@ -91,12 +103,14 @@ const BottomNav = ({ onOpenCreatePost }) => {
           <Tooltip title="Home">
             <IconButton
               component={motion.button}
-              whileHover={{ scale: 1.1 }}
+              whileHover={{ scale: 1.2, rotate: 10 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => navigate("/")}
               sx={{
-                color: isActive("/") ? "#42A5F5" : "white", // blue.400 equivalent
-                "&:hover": { color: "#42A5F5" },
+                color: isActive("/") ? "#8515fe" : "white",
+                "&:hover": { color: "#8515fe" },
+                borderRadius: "50%",
+                backgroundColor: isActive("/") ? "rgba(99, 102, 241, 0.1)" : "transparent",
               }}
               aria-label="Home"
             >
@@ -107,28 +121,32 @@ const BottomNav = ({ onOpenCreatePost }) => {
           <Tooltip title="Create Post">
             <IconButton
               component={motion.button}
-              whileHover={{ scale: 1.1 }}
+              whileHover={{ scale: 1.2, rotate: -10 }}
               whileTap={{ scale: 0.9 }}
               onClick={handleCreatePostClick}
               sx={{
-                color: isActive("/create-post") ? "#42A5F5" : "white",
-                "&:hover": { color: "#42A5F5" },
+                color: isActive("/create-post") ? "#8515fe" : "white",
+                "&:hover": { color: "#8515fe" },
+                borderRadius: "50%",
+                backgroundColor: isActive("/create-post") ? "rgba(99, 102, 241, 0.1)" : "transparent",
               }}
               aria-label="Create Post"
             >
-              <AddBoxIcon fontSize="large" />
+              <AddCircleIcon fontSize="large" />
             </IconButton>
           </Tooltip>
 
           <Tooltip title="Search">
             <IconButton
               component={motion.button}
-              whileHover={{ scale: 1.1 }}
+              whileHover={{ scale: 1.2, rotate: 10 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => navigate("/search")}
               sx={{
-                color: isActive("/search") ? "#42A5F5" : "white",
-                "&:hover": { color: "#42A5F5" },
+                color: isActive("/search") ? "#8515fe" : "white",
+                "&:hover": { color: "#8515fe" },
+                borderRadius: "50%",
+                backgroundColor: isActive("/search") ? "rgba(99, 102, 241, 0.1)" : "transparent",
               }}
               aria-label="Search"
             >
@@ -137,32 +155,33 @@ const BottomNav = ({ onOpenCreatePost }) => {
           </Tooltip>
 
           <Tooltip title="Profile">
-          <IconButton
-  component={motion.button}
-  whileHover={{ scale: 1.1 }}
-  whileTap={{ scale: 0.9 }}
-  onClick={() => navigate(`/${user?.username}`)}
-  sx={{ p: 0, borderRadius: "50%" }}
-  aria-label="Profile"
-  title="Profile"
->
-  <Avatar
-    src={user?.profilePic}
-    alt={user?.username}
-    sx={{ width: 32, height: 32 }}
-  />
-</IconButton>
+            <IconButton
+              component={motion.button}
+              whileHover={{ scale: 1.2 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={handleProfileClick}
+              sx={{ p: 0, borderRadius: "50%" }}
+              aria-label="Profile"
+            >
+              <Avatar
+                src={user?.profilePic}
+                alt={user?.username}
+                sx={{ width: 40, height: 40, border: "2px solid #8515fe" }}
+              />
+            </IconButton>
           </Tooltip>
 
           <Tooltip title="Chat">
             <IconButton
               component={motion.button}
-              whileHover={{ scale: 1.1 }}
+              whileHover={{ scale: 1.2, rotate: -10 }}
               whileTap={{ scale: 0.9 }}
-              onClick={() => navigate("/chat")}
+              onClick={handleChatClick}
               sx={{
-                color: isActive("/chat") ? "#42A5F5" : "white",
-                "&:hover": { color: "#42A5F5" },
+                color: isActive("/chat") ? "#8515fe" : "white",
+                "&:hover": { color: "#8515fe" },
+                borderRadius: "50%",
+                backgroundColor: isActive("/chat") ? "rgba(99, 102, 241, 0.1)" : "transparent",
               }}
               aria-label="Chat"
             >

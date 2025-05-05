@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useContext } from "react";
 import {
   Avatar,
   Box,
@@ -6,11 +6,12 @@ import {
   Typography,
   Menu,
   MenuItem,
-  Modal,
   Button,
   TextField,
   Skeleton,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import {
   MoreVert,
@@ -21,6 +22,7 @@ import {
   FavoriteBorder,
   Reply,
   Verified as VerifiedIcon,
+  Close as CloseIcon,
 } from "@mui/icons-material";
 import { formatDistanceToNow } from "date-fns";
 import useShowToast from "../hooks/useShowToast";
@@ -28,7 +30,7 @@ import { useRecoilState, useRecoilValue } from "recoil";
 import userAtom from "../atoms/userAtom";
 import postsAtom from "../atoms/postsAtom";
 import Actions from "./Actions";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   BsFileEarmarkTextFill,
   BsFileZipFill,
@@ -37,21 +39,167 @@ import {
   BsFilePptFill,
   BsFileTextFill,
 } from "react-icons/bs";
+import CommentItem from "../components/CommentItem";
+import { SocketContext } from "../context/SocketContext";
 
 const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
   const [user, setUser] = useState(null);
   const [allPostsUsers, setAllPostsUsers] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
-  const [commentModalOpen, setCommentModalOpen] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [replyTo, setReplyTo] = useState(null);
-  const [editingCommentId, setEditingCommentId] = useState(null);
-  const [editedText, setEditedText] = useState("");
+  const [commentPage, setCommentPage] = useState(1);
+  const [totalComments, setTotalComments] = useState(0);
+  const [showComments, setShowComments] = useState(false);
   const showToast = useShowToast();
   const currentUser = useRecoilValue(userAtom);
   const [posts, setPosts] = useRecoilState(postsAtom);
   const navigate = useNavigate();
+  const { socket } = useContext(SocketContext);
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down("sm"));
+
+  const fetchComments = useCallback(async (page = 1) => {
+    try {
+      const res = await fetch(`/api/posts/post/${post._id}/comments?page=${page}&limit=10`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast("Error", data.error, "error");
+        return;
+      }
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) =>
+          p._id === post._id
+            ? {
+                ...p,
+                comments: page === 1 ? data.comments : [...(p.comments || []), ...data.comments],
+              }
+            : p
+        ),
+      }));
+      setTotalComments(data.totalComments);
+    } catch (error) {
+      showToast("Error", error.message, "error");
+    }
+  }, [post._id, setPosts, showToast]);
+
+  useEffect(() => {
+    if (showComments) {
+      fetchComments(1);
+    }
+  }, [fetchComments, showComments]);
+
+  useEffect(() => {
+    if (socket) {
+      socket.emit("joinPost", post._id);
+
+      const handlers = {
+        newComment: ({ postId, comment, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+            setTotalComments((prev) => prev + 1);
+          }
+        },
+        newReply: ({ postId, commentId, reply, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+          }
+        },
+        likeUnlikeComment: ({ postId, commentId, userId, likes, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+          }
+        },
+        likeUnlikeReply: ({ postId, commentId, replyId, userId, likes, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+          }
+        },
+        editComment: ({ postId, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+          }
+        },
+        editReply: ({ postId, commentId, replyId, text, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+          }
+        },
+        deleteComment: ({ postId, commentId, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+            setTotalComments((prev) => prev - 1);
+          }
+        },
+        deleteReply: ({ postId, commentId, replyId, post: updatedPost }) => {
+          if (postId === post._id && updatedPost) {
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p._id === postId ? { ...p, comments: updatedPost.comments } : p
+              ),
+            }));
+          }
+        },
+        postDeleted: ({ postId }) => {
+          if (postId === post._id) {
+            showToast("Info", "Post has been deleted", "info");
+            setPosts((prev) => ({
+              ...prev,
+              posts: prev.posts.filter((p) => p._id !== postId),
+            }));
+          }
+        },
+      };
+
+      Object.keys(handlers).forEach((event) => socket.on(event, handlers[event]));
+
+      return () => {
+        socket.emit("leavePost", post._id);
+        Object.keys(handlers).forEach((event) => socket.off(event, handlers[event]));
+      };
+    }
+  }, [socket, post._id, setPosts, showToast]);
 
   const fetchUserData = useCallback(async () => {
     try {
@@ -67,15 +215,19 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
           setAllPostsUsers({});
           return;
         }
-        // Ensure _id is used as the key for consistency with postedBy
         const usersMap = data.reduce((acc, user) => {
-          acc[user._id] = { ...user, username: user.username || "Unknown User", profilePic: user.profilePic || "/default-avatar.png", name: user.name || "Unknown" };
+          acc[user._id] = {
+            ...user,
+            username: user.username || "Unknown User",
+            profilePic: user.profilePic || "/default-avatar.png",
+            name: user.name || "Unknown",
+          };
           return acc;
         }, {});
         setAllPostsUsers(usersMap);
-        console.log("Fetched users:", usersMap); // Debug log
       } else {
-        const query = typeof postedBy === "string" ? postedBy : postedBy?._id || postedBy?.username;
+        const query =
+          typeof postedBy === "string" ? postedBy : postedBy?._id || postedBy?.username;
         if (!query) {
           showToast("Error", "Invalid user data for post", "error");
           return;
@@ -89,7 +241,12 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
           showToast("Error", "User not found", "error");
           return;
         }
-        setUser({ ...data, username: data.username || "Unknown User", profilePic: data.profilePic || "/default-avatar.png", name: data.name || "Unknown" });
+        setUser({
+          ...data,
+          username: data.username || "Unknown User",
+          profilePic: data.profilePic || "/default-avatar.png",
+          name: data.name || "Unknown",
+        });
       }
     } catch (error) {
       showToast("Error", error.message, "error");
@@ -130,6 +287,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
   };
 
   const handleEditPost = () => navigate(`/edit-post/${post._id}`);
+
   const handleDownloadPost = () => {
     const content = post.media || post.text;
     const blob = new Blob([content], { type: post.media ? "application/octet-stream" : "text/plain" });
@@ -148,159 +306,71 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return showToast("Error", "Comment cannot be empty", "error");
-    if (replyTo && !replyTo._id) {
-      showToast("Error", "Invalid reply target", "error");
-      setReplyTo(null);
-      return;
-    }
     try {
       const endpoint = replyTo
-        ? `/api/posts/post/${post._id}/comment/${replyTo._id}/reply`
+        ? `/api/posts/post/${post._id}/comment/${replyTo.commentId}/reply`
         : `/api/posts/post/${post._id}/comment`;
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
         credentials: "include",
-        body: JSON.stringify({ text: newComment }),
+        body: JSON.stringify({ text: newComment, parentId: replyTo?._id }),
       });
       const data = await res.json();
-      if (data.error) return showToast("Error", data.error, "error");
-
-      setPosts((prev) => ({
-        ...prev,
-        posts: (prev.posts || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: replyTo
-                  ? p.comments.map((c) =>
-                      c._id === replyTo._id
-                        ? { ...c, replies: [...(c.replies || []), data] }
-                        : c
-                    )
-                  : [...(p.comments || []), data],
-              }
-            : p
-        ),
-        bookmarks: (prev.bookmarks || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: replyTo
-                  ? p.comments.map((c) =>
-                      c._id === replyTo._id
-                        ? { ...c, replies: [...(c.replies || []), data] }
-                        : c
-                    )
-                  : [...(p.comments || []), data],
-              }
-            : p
-        ),
-        suggestedPosts: (prev.suggestedPosts || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: replyTo
-                  ? p.comments.map((c) =>
-                      c._id === replyTo._id
-                        ? { ...c, replies: [...(c.replies || []), data] }
-                        : c
-                    )
-                  : [...(p.comments || []), data],
-              }
-            : p
-        ),
-      }));
+      if (data.error) {
+        showToast("Error", data.error, "error");
+        return;
+      }
       setNewComment("");
       setReplyTo(null);
       showToast("Success", replyTo ? "Reply added" : "Comment added", "success");
+      await fetchComments(1);
     } catch (error) {
       showToast("Error", error.message, "error");
     }
   };
 
-  const handleEditComment = async (commentId) => {
-    if (!editedText.trim()) return showToast("Error", "Comment text cannot be empty", "error");
+  const handleEditComment = async (commentId, text, isReply, parentCommentId) => {
+    if (!text.trim()) return showToast("Error", "Comment text cannot be empty", "error");
     try {
-      const res = await fetch(`/api/posts/post/${post._id}/comment/${commentId}`, {
+      const endpoint = isReply
+        ? `/api/posts/post/${post._id}/comment/${parentCommentId}/reply/${commentId}`
+        : `/api/posts/post/${post._id}/comment/${commentId}`;
+      const res = await fetch(endpoint, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
         credentials: "include",
-        body: JSON.stringify({ text: editedText }),
+        body: JSON.stringify({ text }),
       });
       const data = await res.json();
       if (data.error) return showToast("Error", data.error, "error");
-
-      setPosts((prev) => ({
-        ...prev,
-        posts: (prev.posts || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: p.comments.map((c) =>
-                  c._id === commentId ? { ...c, text: editedText } : c
-                ),
-              }
-            : p
-        ),
-        bookmarks: (prev.bookmarks || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: p.comments.map((c) =>
-                  c._id === commentId ? { ...c, text: editedText } : c
-                ),
-              }
-            : p
-        ),
-        suggestedPosts: (prev.suggestedPosts || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: p.comments.map((c) =>
-                  c._id === commentId ? { ...c, text: editedText } : c
-                ),
-              }
-            : p
-        ),
-      }));
       showToast("Success", "Comment updated", "success");
-      setEditingCommentId(null);
-      setEditedText("");
+      await fetchComments(1);
     } catch (error) {
       showToast("Error", error.message, "error");
     }
   };
 
-  const handleDeleteComment = async (commentId) => {
+  const handleDeleteComment = async (commentId, isReply, parentCommentId) => {
     try {
-      const res = await fetch(`/api/posts/post/${post._id}/comment/${commentId}`, {
+      const endpoint = isReply
+        ? `/api/posts/post/${post._id}/comment/${parentCommentId}/reply/${commentId}`
+        : `/api/posts/post/${post._id}/comment/${commentId}`;
+      const res = await fetch(endpoint, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
         credentials: "include",
       });
       const data = await res.json();
       if (data.error) return showToast("Error", data.error, "error");
-
-      setPosts((prev) => ({
-        ...prev,
-        posts: (prev.posts || []).map((p) =>
-          p._id === post._id
-            ? { ...p, comments: p.comments.filter((c) => c._id !== commentId) }
-            : p
-        ),
-        bookmarks: (prev.bookmarks || []).map((p) =>
-          p._id === post._id
-            ? { ...p, comments: p.comments.filter((c) => c._id !== commentId) }
-            : p
-        ),
-        suggestedPosts: (prev.suggestedPosts || []).map((p) =>
-          p._id === post._id
-            ? { ...p, comments: p.comments.filter((c) => c._id !== commentId) }
-            : p
-        ),
-      }));
       showToast("Success", "Comment deleted successfully", "success");
+      await fetchComments(1);
     } catch (error) {
       showToast("Error", error.message, "error");
     }
@@ -314,81 +384,27 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
         : `/api/posts/post/${post._id}/comment/${commentId}/like`;
       const res = await fetch(endpoint, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
         credentials: "include",
       });
       const data = await res.json();
       if (data.error) return showToast("Error", data.error, "error");
-
-      setPosts((prev) => ({
-        ...prev,
-        posts: (prev.posts || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: isReply
-                  ? p.comments.map((c) =>
-                      c._id === parentCommentId
-                        ? {
-                            ...c,
-                            replies: c.replies.map((r) =>
-                              r._id === commentId ? { ...r, likes: data.likes } : r
-                            ),
-                          }
-                        : c
-                    )
-                  : p.comments.map((c) =>
-                      c._id === commentId ? { ...c, likes: data.likes } : c
-                    ),
-              }
-            : p
-        ),
-        bookmarks: (prev.bookmarks || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: isReply
-                  ? p.comments.map((c) =>
-                      c._id === parentCommentId
-                        ? {
-                            ...c,
-                            replies: c.replies.map((r) =>
-                              r._id === commentId ? { ...r, likes: data.likes } : r
-                            ),
-                          }
-                        : c
-                    )
-                  : p.comments.map((c) =>
-                      c._id === commentId ? { ...c, likes: data.likes } : c
-                    ),
-              }
-            : p
-        ),
-        suggestedPosts: (prev.suggestedPosts || []).map((p) =>
-          p._id === post._id
-            ? {
-                ...p,
-                comments: isReply
-                  ? p.comments.map((c) =>
-                      c._id === parentCommentId
-                        ? {
-                            ...c,
-                            replies: c.replies.map((r) =>
-                              r._id === commentId ? { ...r, likes: data.likes } : r
-                            ),
-                          }
-                        : c
-                    )
-                  : p.comments.map((c) =>
-                      c._id === commentId ? { ...c, likes: data.likes } : c
-                    ),
-              }
-            : p
-        ),
-      }));
+      await fetchComments(1);
     } catch (error) {
       showToast("Error", error.message, "error");
     }
+  };
+
+  const handleLoadMoreComments = () => {
+    setCommentPage((prev) => prev + 1);
+    fetchComments(commentPage + 1);
+  };
+
+  const toggleComments = () => {
+    setShowComments((prev) => !prev);
   };
 
   const renderPost = (currentPost, postUser) => {
@@ -419,7 +435,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
     };
 
     const getFileName = () => {
-      return currentPost.originalFilename || currentPost.media.split("/").pop() || "Unnamed Document";
+      return currentPost.originalFilename || currentPost.media?.split("/").pop() || "Unnamed Document";
     };
 
     return (
@@ -431,12 +447,8 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
           maxWidth: "600px",
           minHeight: { xs: "auto", sm: "350px", md: "400px" },
           mx: { xs: 0, sm: "auto" },
-          background: "rgba(255, 255, 255, 0.2)",
-          backdropFilter: "blur(10px)",
-          borderRadius: "16px",
-          border: "1px solid rgba(255, 255, 255, 0.2)",
+          background: "background.paper",
           padding: { xs: 1, sm: 2, md: 2.5 },
-          boxShadow: "0 4px 30px rgba(0, 0, 0, 0.1)",
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
@@ -449,7 +461,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
               position: "absolute",
               top: 10,
               left: 10,
-              color: "red",
+              color: "error.main",
               fontWeight: "bold",
               background: "rgba(255, 255, 255, 0.7)",
               p: 1,
@@ -502,6 +514,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
                 sx={{ fontSize: { xs: "0.7rem", sm: "0.875rem" }, ml: 1 }}
               >
                 {formatDistanceToNow(new Date(currentPost.createdAt))} ago
+                {currentPost.isEdited && " (Edited)"}
               </Typography>
             </Box>
           </Box>
@@ -582,7 +595,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
                         bottom: 10,
                         right: 10,
                         bgcolor: "rgba(0, 0, 0, 0.6)",
-                        color: "white",
+                        color: "text.primary",
                         p: "2px 8px",
                         borderRadius: 2,
                         fontSize: { xs: "0.65rem", sm: "0.75rem" },
@@ -627,232 +640,140 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
         </Box>
 
         <Box sx={{ mt: "auto", width: "100%", display: "flex", justifyContent: "center" }}>
-          <Actions post={currentPost} onCommentClick={() => setCommentModalOpen(true)} />
+          <Actions post={currentPost} onCommentClick={toggleComments} />
         </Box>
 
-        <Modal
-          open={commentModalOpen}
-          onClose={() => setCommentModalOpen(false)}
-          sx={{ display: "flex", alignItems: { xs: "flex-end", sm: "center" }, justifyContent: "center", px: { xs: 0, sm: 1 } }}
-        >
-          <Box
-            sx={{
-              width: { xs: "100%", sm: "90%", md: "600px" },
-              maxWidth: "800px",
-              maxHeight: { xs: "70vh", sm: "80vh" },
-              background: "rgba(255, 255, 255, 0.2)",
-              backdropFilter: "blur(10px)",
-              borderTopLeftRadius: { xs: 16, sm: 8 },
-              borderTopRightRadius: { xs: 16, sm: 8 },
-              borderBottomLeftRadius: { xs: 0, sm: 8 },
-              borderBottomRightRadius: { xs: 0, sm: 8 },
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-              p: { xs: 1.5, sm: 2, md: 3 },
-              overflowY: "auto",
-              boxShadow: "0 4px 30px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-              <Typography variant="h6" color="text.primary" sx={{ fontSize: { xs: "1rem", sm: "1.25rem" } }}>
-                Comments
-              </Typography>
-              <Button onClick={() => setCommentModalOpen(false)} sx={{ color: "text.primary", fontSize: { xs: "0.875rem", sm: "1rem" } }}>
-                Close
-              </Button>
-            </Box>
-
-            {currentUser && (
-              <Box display="flex" gap={{ xs: 1, sm: 2 }} mb={2} flexDirection={{ xs: "column", sm: "row" }}>
-                <Avatar src={currentUser.profilePic} alt={currentUser.username} sx={{ width: { xs: 24, sm: 32 }, height: { xs: 24, sm: 32 } }} />
-                <Box flex={1}>
-                  {replyTo && <Typography variant="caption" color="text.primary" mb={1}>Replying to {replyTo.username}</Typography>}
-                  <TextField
-                    fullWidth
-                    variant="outlined"
-                    placeholder={replyTo ? "Add a reply..." : "Add a comment..."}
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    sx={{
-                      bgcolor: "rgba(255, 255, 255, 0.3)",
-                      backdropFilter: "blur(5px)",
-                      input: { color: "text.primary" },
-                      "& .MuiOutlinedInput-root": {
-                        "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
-                        "&:hover fieldset": { borderColor: "rgba(255, 255, 255, 0.5)" },
-                        "&.Mui-focused fieldset": { borderColor: "primary.main" },
-                      },
-                      fontSize: { xs: "0.875rem", sm: "1rem" },
-                    }}
-                  />
-                </Box>
-                <Button
-                  onClick={handleAddComment}
-                  sx={{
-                    color: "primary.main",
-                    bgcolor: "rgba(255, 255, 255, 0.3)",
-                    backdropFilter: "blur(5px)",
-                    "&:hover": { bgcolor: "rgba(255, 255, 255, 0.5)" },
-                    fontSize: { xs: "0.875rem", sm: "1rem" },
-                    px: { xs: 1, sm: 2 },
-                  }}
-                >
-                  Post
-                </Button>
-              </Box>
-            )}
-
-            {(currentPost.comments || []).length > 0 ? (
-              currentPost.comments.map((comment) => (
-                <Box
-                  key={comment._id}
-                  display="flex"
-                  gap={{ xs: 1, sm: 2 }}
-                  mb={2}
-                  sx={{
-                    background: "rgba(255, 255, 255, 0.3)",
-                    backdropFilter: "blur(5px)",
-                    borderRadius: "8px",
-                    p: { xs: 1, sm: 1.5 },
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
-                  }}
-                >
-                  <Avatar src={comment.userProfilePic} alt={comment.username} sx={{ width: { xs: 24, sm: 32 }, height: { xs: 24, sm: 32 } }} />
-                  <Box flex={1}>
-                    <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ fontSize: { xs: "0.875rem", sm: "1rem" } }}>
-                      {comment.username}
-                    </Typography>
-                    {editingCommentId === comment._id ? (
-                      <Box display="flex" gap={1} mt={1}>
-                        <TextField
-                          fullWidth
-                          value={editedText}
-                          onChange={(e) => setEditedText(e.target.value)}
-                          variant="outlined"
-                          size="small"
-                          sx={{
-                            bgcolor: "rgba(255, 255, 255, 0.3)",
-                            backdropFilter: "blur(5px)",
-                            input: { color: "text.primary" },
-                            "& .MuiOutlinedInput-root": {
-                              "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
-                              "&:hover fieldset": { borderColor: "rgba(255, 255, 255, 0.5)" },
-                              "&.Mui-focused fieldset": { borderColor: "primary.main" },
-                            },
-                          }}
-                        />
-                        <Button size="small" onClick={() => handleEditComment(comment._id)} sx={{ color: "primary.main" }}>
-                          Save
-                        </Button>
-                      </Box>
-                    ) : (
-                      <Typography variant="body2" color="text.primary" sx={{ fontSize: { xs: "0.875rem", sm: "1rem" }, wordBreak: "break-word" }}>
-                        {comment.text}
-                      </Typography>
-                    )}
-                    <Box display="flex" gap={1} mt={1} flexWrap="wrap">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleLikeComment(comment._id)}
-                        sx={{ color: comment.likes?.includes(currentUser?._id) ? "#ED4956" : "text.primary" }}
-                      >
-                        {comment.likes?.includes(currentUser?._id) ? <Favorite /> : <FavoriteBorder />}
-                        <Typography variant="caption" ml={0.5} color="text.primary" sx={{ fontSize: { xs: "0.7rem", sm: "0.875rem" } }}>
-                          {comment.likes?.length || 0}
-                        </Typography>
-                      </IconButton>
-                      <Button
-                        size="small"
-                        onClick={() => setReplyTo(comment)}
-                        sx={{ color: "text.primary", fontSize: { xs: "0.75rem", sm: "0.875rem" } }}
-                        startIcon={<Reply />}
-                      >
-                        Reply
-                      </Button>
-                      {(comment.userId === currentUser?._id || currentPost.postedBy === currentUser?._id || currentUser?.isAdmin) && (
-                        <>
-                          <Button
-                            size="small"
-                            onClick={() => {
-                              setEditingCommentId(comment._id);
-                              setEditedText(comment.text);
-                            }}
-                            sx={{ color: "text.primary", fontSize: { xs: "0.75rem", sm: "0.875rem" } }}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="small"
-                            onClick={() => handleDeleteComment(comment._id)}
-                            sx={{ color: "text.primary", fontSize: { xs: "0.75rem", sm: "0.875rem" } }}
-                          >
-                            Delete
-                          </Button>
-                        </>
-                      )}
-                    </Box>
-                    {(comment.replies || []).map((reply) => (
-                      <Box
-                        key={reply._id}
-                        display="flex"
-                        gap={{ xs: 1, sm: 2 }}
-                        mt={1}
-                        ml={4}
-                        sx={{ background: "rgba(255, 255, 255, 0.4)", backdropFilter: "blur(5px)", borderRadius: "8px", p: { xs: 1, sm: 1.5 } }}
-                      >
-                        <Avatar src={reply.userProfilePic} alt={reply.username} sx={{ width: { xs: 20, sm: 28 }, height: { xs: 20, sm: 28 } }} />
-                        <Box flex={1}>
-                          <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
-                            {reply.username}
-                          </Typography>
-                          <Typography variant="body2" color="text.primary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" }, wordBreak: "break-word" }}>
-                            {reply.text}
-                          </Typography>
-                          <Box display="flex" gap={1} mt={1}>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleLikeComment(reply._id, true, comment._id)}
-                              sx={{ color: reply.likes?.includes(currentUser?._id) ? "#ED4956" : "text.primary" }}
-                            >
-                              {reply.likes?.includes(currentUser?._id) ? <Favorite /> : <FavoriteBorder />}
-                              <Typography variant="caption" ml={0.5} color="text.primary" sx={{ fontSize: { xs: "0.7rem", sm: "0.875rem" } }}>
-                                {reply.likes?.length || 0}
-                              </Typography>
-                            </IconButton>
-                            {(reply.userId === currentUser?._id || currentPost.postedBy === currentUser?._id || currentUser?.isAdmin) && (
-                              <>
-                                <Button
-                                  size="small"
-                                  onClick={() => {
-                                    setEditingCommentId(reply._id);
-                                    setEditedText(reply.text);
-                                  }}
-                                  sx={{ color: "text.primary", fontSize: { xs: "0.75rem", sm: "0.875rem" } }}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  size="small"
-                                  onClick={() => handleDeleteComment(reply._id)}
-                                  sx={{ color: "text.primary", fontSize: { xs: "0.75rem", sm: "0.875rem" } }}
-                                >
-                                  Delete
-                                </Button>
-                              </>
-                            )}
-                          </Box>
-                        </Box>
-                      </Box>
-                    ))}
+        <AnimatePresence>
+          {showComments && (
+            <motion.div
+              initial={isSmallScreen ? { y: "100%" } : { opacity: 0 }}
+              animate={isSmallScreen ? { y: 0 } : { opacity: 1 }}
+              exit={isSmallScreen ? { y: "100%" } : { opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              style={
+                isSmallScreen
+                  ? {
+                      position: "fixed",
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: "80vh",
+                      background: theme.palette.background.paper,
+                      borderTopLeftRadius: 16,
+                      borderTopRightRadius: 16,
+                      overflowY: "auto",
+                      zIndex: 1000,
+                    }
+                  : {}
+              }
+            >
+              <Box sx={{ px: { xs: 1, sm: 2 }, py: 2, bgcolor: "background.paper" }}>
+                {isSmallScreen && (
+                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+                    <Box
+                      sx={{
+                        width: 40,
+                        height: 4,
+                        bgcolor: "text.secondary",
+                        borderRadius: 2,
+                        cursor: "pointer",
+                      }}
+                      onClick={toggleComments}
+                    />
+                    <IconButton onClick={toggleComments} size="small">
+                      <CloseIcon sx={{ color: "text.primary", fontSize: { xs: 20, sm: 24 } }} />
+                    </IconButton>
                   </Box>
-                </Box>
-              ))
-            ) : (
-              <Typography color="text.primary" textAlign="center" sx={{ fontSize: { xs: "0.875rem", sm: "1rem" } }}>
-                No comments yet.
-              </Typography>
-            )}
-          </Box>
-        </Modal>
+                )}
+                {currentUser && (
+                  <Box display="flex" gap={{ xs: 1, sm: 2 }} mb={2} flexDirection={{ xs: "column", sm: "row" }}>
+                    <Avatar
+                      src={currentUser.profilePic}
+                      alt={currentUser.username}
+                      sx={{ width: { xs: 24, sm: 32 }, height: { xs: 24, sm: 32 } }}
+                    />
+                    <Box flex={1}>
+                      {replyTo && (
+                        <Typography variant="caption" color="text.primary" mb={1}>
+                          Replying to {replyTo.username}
+                        </Typography>
+                      )}
+                      <TextField
+                        fullWidth
+                        variant="outlined"
+                        placeholder={replyTo ? "Add a reply..." : "Add a comment..."}
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        sx={{
+                          bgcolor: "rgba(255, 255, 255, 0.05)",
+                          input: { color: "text.primary" },
+                          "& .MuiOutlinedInput-root": {
+                            "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
+                            "&:hover fieldset": { borderColor: "rgba(255, 255, 255, 0.5)" },
+                            "&.Mui-focused fieldset": { borderColor: "primary.main" },
+                          },
+                          fontSize: { xs: "0.875rem", sm: "1rem" },
+                        }}
+                      />
+                    </Box>
+                    <Button
+                      onClick={handleAddComment}
+                      sx={{
+                        bgcolor: "primary.main",
+                        color: "text.primary",
+                        "&:hover": { bgcolor: "primary.dark" },
+                        fontSize: { xs: "0.875rem", sm: "1rem" },
+                        px: { xs: 1, sm: 2 },
+                      }}
+                    >
+                      Post
+                    </Button>
+                  </Box>
+                )}
+
+                {(currentPost.comments || []).length > 0 ? (
+                  <>
+                    {currentPost.comments.map((comment) => {
+                      console.log("Rendering CommentItem:", {
+                        postId: currentPost._id,
+                        commentId: comment._id,
+                        topLevelCommentId: comment._id,
+                      });
+                      return (
+                        <CommentItem
+                          key={comment._id}
+                          comment={comment}
+                          depth={0}
+                          currentUser={currentUser}
+                          postId={currentPost._id}
+                          postOwnerId={currentPost.postedBy._id}
+                          topLevelCommentId={comment._id}
+                          onReply={setReplyTo}
+                          onEdit={handleEditComment}
+                          onDelete={handleDeleteComment}
+                          onLike={handleLikeComment}
+                          fetchComments={fetchComments}
+                        />
+                      );
+                    })}
+                    {totalComments > currentPost.comments.length && (
+                      <Button
+                        onClick={handleLoadMoreComments}
+                        sx={{ mt: 1, color: "secondary.main", textTransform: "none" }}
+                      >
+                        Load more comments ({totalComments - currentPost.comments.length} remaining)
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <Typography color="text.primary" textAlign="center" sx={{ fontSize: { xs: "0.875rem", sm: "1rem" } }}>
+                    No comments yet.
+                  </Typography>
+                )}
+              </Box>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Box>
     );
   };
@@ -877,11 +798,11 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
         <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", px: { xs: 1, sm: 2 }, py: 2 }}>
           {posts.posts.length > 0 ? (
             posts.posts.map((adminPost) => {
-              const postUser = allPostsUsers[adminPost.postedBy] || { 
-                username: "Unknown User", 
-                profilePic: "/default-avatar.png", 
-                name: "Unknown", 
-                isVerified: false 
+              const postUser = allPostsUsers[adminPost.postedBy] || {
+                username: "Unknown User",
+                profilePic: "/default-avatar.png",
+                name: "Unknown",
+                isVerified: false,
               };
               return renderPost(adminPost, postUser);
             })

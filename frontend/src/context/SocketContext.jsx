@@ -4,7 +4,8 @@ import io from "socket.io-client";
 import userAtom from "../atoms/userAtom";
 import { motion } from "framer-motion";
 
-const SocketContext = createContext();
+// Define and export SocketContext
+export const SocketContext = createContext();
 
 export const useSocket = () => {
   return useContext(SocketContext);
@@ -29,7 +30,8 @@ export const SocketContextProvider = ({ children }) => {
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000,
+      randomizationFactor: 0.5,
       withCredentials: true,
       forceNew: false,
       timeout: 10000,

@@ -14,8 +14,12 @@ import { SocketContextProvider } from "./context/SocketContext";
 import { Skeleton } from "antd";
 import TopNav from "./components/TopNav";
 import BottomNavigation from "./components/BottomNav";
-import Notification from "./components/Notification";
 import ErrorBoundary from "./components/ErrorBoundary";
+
+// react-toastify
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { FaCheckCircle, FaInfoCircle, FaExclamationTriangle, FaTimesCircle } from "react-icons/fa";
 
 // Lazy-loaded pages
 const UserPage = lazy(() => import("./pages/UserPage"));
@@ -36,7 +40,7 @@ const AdminProfilePage = lazy(() => import("./pages/AdminProfilePage"));
 const theme = createTheme({
   palette: {
     mode: "dark",
-    primary: { main: "#a78bfa" },
+    primary: { main: "#8515fe" },
     secondary: { main: "#8b5cf6" },
     background: { default: "#1a1a1a", paper: "rgba(255, 255, 255, 0.05)" },
     text: { primary: "#ffffff", secondary: "rgba(255, 255, 255, 0.7)" },
@@ -61,6 +65,34 @@ const theme = createTheme({
     },
   },
 });
+
+// Custom toast configuration
+const toastConfig = {
+  position: "top-center",
+  autoClose: 3000,
+  hideProgressBar: false,
+  closeOnClick: true,
+  pauseOnHover: true,
+  draggable: true,
+  progress: undefined,
+  theme: "dark",
+};
+
+// Custom toast icons
+const toastIcons = {
+  success: <FaCheckCircle />,
+  info: <FaInfoCircle />,
+  warning: <FaExclamationTriangle />,
+  error: <FaTimesCircle />,
+};
+
+// Custom toast function
+const showToast = (type, message) => {
+  toast[type](message, {
+    ...toastConfig,
+    icon: toastIcons[type],
+  });
+};
 
 function App() {
   const user = useRecoilValue(userAtom);
@@ -104,7 +136,21 @@ function App() {
             bgcolor="background.default"
             color="text.primary"
           >
-            <Notification />
+            <ToastContainer
+              position="top-center"
+              autoClose={3000}
+              hideProgressBar={false}
+              newestOnTop={false}
+              closeOnClick
+              rtl={false}
+              pauseOnFocusLoss
+              draggable
+              pauseOnHover
+              theme="dark"
+              style={{
+                fontFamily: theme.typography.fontFamily,
+              }}
+            />
             {isMediumScreenOrLarger && pathname !== "/auth" && user && (
               <TopNav
                 user={user}
@@ -268,3 +314,4 @@ function App() {
 }
 
 export default App;
+export { showToast };
