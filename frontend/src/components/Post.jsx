@@ -77,12 +77,12 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
           p._id === post._id
             ? {
                 ...p,
-                comments: page === 1 ? data.comments : [...(p.comments || []), ...data.comments],
+                comments: page === 1 ? data : [...(p.comments || []), ...data],
               }
             : p
         ),
       }));
-      setTotalComments(data.totalComments);
+      setTotalComments(data.length);
     } catch (error) {
       showToast("Error", error.message, "error");
     }
@@ -96,106 +96,109 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
 
   useEffect(() => {
     if (socket) {
-      socket.emit("joinPost", post._id);
+      const room = `post:${post._id}`;
+      socket.emit("joinPostRoom", room);
+      console.log(`Joined room: ${room}`);
 
-      const handlers = {
-        newComment: ({ postId, comment, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-            setTotalComments((prev) => prev + 1);
-          }
-        },
-        newReply: ({ postId, commentId, reply, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-          }
-        },
-        likeUnlikeComment: ({ postId, commentId, userId, likes, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-          }
-        },
-        likeUnlikeReply: ({ postId, commentId, replyId, userId, likes, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-          }
-        },
-        editComment: ({ postId, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-          }
-        },
-        editReply: ({ postId, commentId, replyId, text, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-          }
-        },
-        deleteComment: ({ postId, commentId, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-            setTotalComments((prev) => prev - 1);
-          }
-        },
-        deleteReply: ({ postId, commentId, replyId, post: updatedPost }) => {
-          if (postId === post._id && updatedPost) {
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.map((p) =>
-                p._id === postId ? { ...p, comments: updatedPost.comments } : p
-              ),
-            }));
-          }
-        },
-        postDeleted: ({ postId }) => {
-          if (postId === post._id) {
-            showToast("Info", "Post has been deleted", "info");
-            setPosts((prev) => ({
-              ...prev,
-              posts: prev.posts.filter((p) => p._id !== postId),
-            }));
-          }
-        },
-      };
+     // Update the handlers object in the socket useEffect
+const handlers = {
+  newComment: ({ postId, comment, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+      setTotalComments(updatedPost.comments.length);
+    }
+  },
+  newReply: ({ postId, commentId, reply, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+    }
+  },
+  likeUnlikeComment: ({ postId, commentId, userId, likes, comment: updatedComment, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+    }
+  },
+  likeUnlikeReply: ({ postId, commentId, replyId, userId, likes, reply: updatedReply, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+    }
+  },
+  editComment: ({ postId, commentId, comment: updatedComment, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+    }
+  },
+  editReply: ({ postId, commentId, replyId, reply: updatedReply, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+    }
+  },
+  deleteComment: ({ postId, commentId, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+      setTotalComments(updatedPost.comments.length);
+    }
+  },
+  deleteReply: ({ postId, commentId, replyId, post: updatedPost }) => {
+    if (postId === post._id && updatedPost) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) => 
+          p._id === postId ? { ...p, comments: updatedPost.comments } : p
+        ),
+      }));
+    }
+  },
+  postDeleted: ({ postId }) => {
+    if (postId === post._id) {
+      setPosts((prev) => ({
+        ...prev,
+        posts: prev.posts.filter((p) => p._id !== postId),
+      }));
+    }
+  }
+};
 
-      Object.keys(handlers).forEach((event) => socket.on(event, handlers[event]));
+      Object.entries(handlers).forEach(([event, handler]) => socket.on(event, handler));
 
       return () => {
-        socket.emit("leavePost", post._id);
+        socket.emit("leavePostRoom", room);
+        console.log(`Left room: ${room}`);
         Object.keys(handlers).forEach((event) => socket.off(event, handlers[event]));
       };
     }
@@ -314,7 +317,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          "Authorization": `Bearer ${localStorage.getItem("token")}`,
         },
         credentials: "include",
         body: JSON.stringify({ text: newComment, parentId: replyTo?._id }),
@@ -327,7 +330,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
       setNewComment("");
       setReplyTo(null);
       showToast("Success", replyTo ? "Reply added" : "Comment added", "success");
-      await fetchComments(1);
+      // Socket event will update comments, no need to call fetchComments
     } catch (error) {
       showToast("Error", error.message, "error");
     }
@@ -343,7 +346,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          "Authorization": `Bearer ${localStorage.getItem("token")}`,
         },
         credentials: "include",
         body: JSON.stringify({ text }),
@@ -351,7 +354,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
       const data = await res.json();
       if (data.error) return showToast("Error", data.error, "error");
       showToast("Success", "Comment updated", "success");
-      await fetchComments(1);
+      // Socket event will update comments, no need to call fetchComments
     } catch (error) {
       showToast("Error", error.message, "error");
     }
@@ -370,7 +373,7 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
       const data = await res.json();
       if (data.error) return showToast("Error", data.error, "error");
       showToast("Success", "Comment deleted successfully", "success");
-      await fetchComments(1);
+      // Socket event will update comments, no need to call fetchComments
     } catch (error) {
       showToast("Error", error.message, "error");
     }
@@ -386,13 +389,13 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          "Authorization": `Bearer ${localStorage.getItem("token")}`,
         },
         credentials: "include",
       });
       const data = await res.json();
       if (data.error) return showToast("Error", data.error, "error");
-      await fetchComments(1);
+      // Socket event will update comments, no need to call fetchComments
     } catch (error) {
       showToast("Error", error.message, "error");
     }
@@ -734,11 +737,6 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
                 {(currentPost.comments || []).length > 0 ? (
                   <>
                     {currentPost.comments.map((comment) => {
-                      console.log("Rendering CommentItem:", {
-                        postId: currentPost._id,
-                        commentId: comment._id,
-                        topLevelCommentId: comment._id,
-                      });
                       return (
                         <CommentItem
                           key={comment._id}
@@ -752,7 +750,6 @@ const Post = ({ post, postedBy, isAdminView = false, onBanUnbanPost }) => {
                           onEdit={handleEditComment}
                           onDelete={handleDeleteComment}
                           onLike={handleLikeComment}
-                          fetchComments={fetchComments}
                         />
                       );
                     })}

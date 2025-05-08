@@ -1,4 +1,3 @@
-// HomePage.jsx
 import { useState, useEffect, useCallback } from "react";
 import { useRecoilState, useRecoilValue } from "recoil";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +8,6 @@ import {
   Box,
   IconButton,
   Typography,
-  CircularProgress,
   Skeleton,
   useMediaQuery,
   List,
@@ -21,7 +19,6 @@ import {
 } from "@mui/material";
 import {
   Add as AddIcon,
-  LocationOn as LocationIcon,
   MoreVert,
   Delete as DeleteIcon,
 } from "@mui/icons-material";
@@ -30,7 +27,6 @@ import userAtom from "../atoms/userAtom";
 import { conversationsAtom, selectedConversationAtom } from "../atoms/messagesAtom";
 import Post from "../components/Post";
 import SuggestedUsers from "../components/SuggestedUsers";
-import Story from "../components/Story";
 import BottomNav from "../components/BottomNav";
 import MessageContainer from "../components/MessageContainer";
 import useShowToast from "../hooks/useShowToast";
@@ -86,27 +82,9 @@ const HomePage = () => {
     }
   }, [user, showToast, setPostsState]);
 
-  const fetchStories = useCallback(async () => {
-    try {
-      const res = await fetch("/api/posts/stories", {
-        credentials: "include",
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      const data = await res.json();
-      if (data.error) {
-        showToast("Error", data.error, "error");
-        return;
-      }
-      setPostsState((prev) => ({ ...prev, stories: data }));
-    } catch (error) {
-      showToast("Error", error.message, "error");
-    }
-  }, [showToast, setPostsState]);
-
   useEffect(() => {
     fetchPosts();
-    fetchStories();
-  }, [fetchPosts, fetchStories]);
+  }, [fetchPosts]);
 
   const handleBanUnbanPost = async (postId, isBanned) => {
     if (!user?.isAdmin) {
@@ -135,28 +113,6 @@ const HomePage = () => {
     }
   };
 
-  const handleDeleteStory = async (storyId) => {
-    try {
-      const res = await fetch(`/api/posts/story/${storyId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (data.error) {
-        showToast("Error", data.error, "error");
-        return;
-      }
-      showToast("Success", "Story deleted successfully", "success");
-      setPostsState((prev) => ({
-        ...prev,
-        stories: prev.stories.filter((s) => s._id !== storyId),
-      }));
-    } catch (error) {
-      showToast("Error", error.message, "error");
-    }
-  };
-
   useEffect(() => {
     if (!socket) {
       console.warn("Socket is not initialized in HomePage");
@@ -172,26 +128,10 @@ const HomePage = () => {
       }
     });
 
-    socket.on("newStory", (story) => {
-      if (user?.isAdmin || user?.following?.includes(story.postedBy)) {
-        setPostsState((prev) => ({
-          ...prev,
-          stories: [story, ...(prev.stories || [])],
-        }));
-      }
-    });
-
     socket.on("postDeleted", ({ postId }) => {
       setPostsState((prev) => ({
         ...prev,
         posts: (prev.posts || []).filter((p) => p._id !== postId),
-      }));
-    });
-
-    socket.on("storyDeleted", ({ storyId }) => {
-      setPostsState((prev) => ({
-        ...prev,
-        stories: (prev.stories || []).filter((s) => s._id !== storyId),
       }));
     });
 
@@ -215,9 +155,7 @@ const HomePage = () => {
 
     return () => {
       socket.off("newPost");
-      socket.off("newStory");
       socket.off("postDeleted");
-      socket.off("storyDeleted");
       socket.off("messagesSeen");
       socket.off("newMessage");
     };
@@ -485,7 +423,7 @@ const HomePage = () => {
           <motion.div
             key="suggested-users"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1}}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.5 }}
             style={{ marginTop: index === 0 ? "16px" : "0" }}
           >
@@ -521,29 +459,6 @@ const HomePage = () => {
                 "&::-webkit-scrollbar": { display: "none" },
               }}
             >
-              {!loading && postsState.stories?.length > 0 && (
-                <motion.div
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <Box sx={{ display: "flex", gap: 1, overflowX: "auto", py: 1 }}>
-                    {postsState.stories.map((story) => (
-                      <Box key={story._id} sx={{ position: "relative" }}>
-                        <Story story={story} />
-                        {(story.postedBy._id === user?._id || user?.isAdmin) && (
-                          <IconButton
-                            onClick={() => handleDeleteStory(story._id)}
-                            sx={{ position: "absolute", top: 8, right: 8, color: "#8515fe" }}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        )}
-                      </Box>
-                    ))}
-                  </Box>
-                </motion.div>
-              )}
               {renderPostsWithSuggestedUsers()}
             </Box>
             <Box
@@ -580,29 +495,6 @@ const HomePage = () => {
                 "&::-webkit-scrollbar": { display: "none" },
               }}
             >
-              {!loading && postsState.stories?.length > 0 && (
-                <motion.div
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <Box sx={{ display: "flex", gap: 1, overflowX: "auto", py: 1 }}>
-                    {postsState.stories.map((story) => (
-                      <Box key={story._id} sx={{ position: "relative" }}>
-                        <Story story={story} />
-                        {(story.postedBy._id === user?._id || user?.isAdmin) && (
-                          <IconButton
-                            onClick={() => handleDeleteStory(story._id)}
-                            sx={{ position: "absolute", top: 8, right: 8, color: "#8515fe" }}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        )}
-                      </Box>
-                    ))}
-                  </Box>
-                </motion.div>
-              )}
               {renderPostsWithSuggestedUsers()}
             </Box>
             <Box
@@ -631,29 +523,6 @@ const HomePage = () => {
               "&::-webkit-scrollbar": { display: "none" },
             }}
           >
-            {!loading && postsState.stories?.length > 0 && (
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ duration: 0.5 }}
-              >
-                <Box sx={{ display: "flex", gap: 1, overflowX: "auto", py: 1 }}>
-                  {postsState.stories.map((story) => (
-                    <Box key={story._id} sx={{ position: "relative" }}>
-                      <Story story={story} />
-                      {(story.postedBy._id === user?._id || user?.isAdmin) && (
-                        <IconButton
-                          onClick={() => handleDeleteStory(story._id)}
-                          sx={{ position: "absolute", top: 8, right: 8, color: "#8515fe" }}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      )}
-                    </Box>
-                  ))}
-                </Box>
-              </motion.div>
-            )}
             {selectedConversation._id ? (
               <MessageContainer isMobile={true} />
             ) : (
@@ -670,7 +539,7 @@ const HomePage = () => {
           >
             <IconButton
               color="primary"
-              aria-label="Create Post or Story"
+              aria-label="Create Post"
               onClick={() => setModalOpen(true)}
               sx={{
                 width: 56,
@@ -691,7 +560,6 @@ const HomePage = () => {
           onClose={() => setModalOpen(false)}
           onPostCreated={() => {
             fetchPosts();
-            fetchStories();
           }}
           isDrawer={isSmallScreen}
         />

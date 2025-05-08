@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import PropTypes from "prop-types";
 import useShowToast from "../hooks/useShowToast";
 import { Box, Typography } from "@mui/material";
@@ -15,7 +14,6 @@ const MessageContainer = ({ userId }) => {
   const selectedConversation = useRecoilValue(selectedConversationAtom);
   const { socket } = useSocket();
   const showToast = useShowToast();
-  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
@@ -91,25 +89,15 @@ const MessageContainer = ({ userId }) => {
 
     socket.on("reconnect", handleReconnect);
 
-    // Fallback: Refetch if no messages received after 5 seconds
-    const timeout = setTimeout(() => {
-      if (messages.length === 0 && !loadingMessages) {
-        console.log("No messages received, refetching");
-        fetchMessages();
-      }
-    }, 5000);
-
     return () => {
       socket.off("reconnect", handleReconnect);
-      clearTimeout(timeout);
     };
-  }, [socket, userId, messages.length, loadingMessages]);
+  }, [socket, userId]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handleNewMessage = (message) => {
-      console.log("Received newMessage:", message);
       const isRelevantChat =
         message.conversationId === conversationId ||
         (message.sender._id === userId && message.recipientId === currentUser._id) ||
@@ -118,23 +106,23 @@ const MessageContainer = ({ userId }) => {
       if (isRelevantChat) {
         setMessages((prev) => {
           if (prev.some((m) => m._id === message._id)) {
-            console.log("Duplicate message ignored:", message._id);
             return prev.map((m) => (m._id === message._id ? { ...m, status: message.status } : m));
           }
-          return [...prev, { ...message, status: message.sender._id === currentUser._id ? "sent" : "received" }];
+          return [...prev, { ...message, status: message.sender._id === currentUser._id ? message.status || "sent" : "received" }];
         });
         if (!conversationId) setConversationId(message.conversationId);
 
-        socket.emit("messageDelivered", {
-          messageId: message._id,
-          conversationId: message.conversationId,
-          recipientId: currentUser._id,
-        });
+        if (message.sender._id !== currentUser._id) {
+          socket.emit("messageDelivered", {
+            messageId: message._id,
+            conversationId: message.conversationId,
+            recipientId: currentUser._id,
+          });
+        }
       }
     };
 
     const handleMessagesSeen = ({ conversationId: cid, seenMessages }) => {
-      console.log("Received messagesSeen:", { cid, seenMessages });
       if (cid === conversationId) {
         setMessages((prev) =>
           prev.map((msg) =>
@@ -147,7 +135,6 @@ const MessageContainer = ({ userId }) => {
     };
 
     const handleMessageDelivered = ({ messageId, conversationId: cid }) => {
-      console.log("Received messageDelivered:", { messageId, cid });
       if (cid === conversationId) {
         setMessages((prev) =>
           prev.map((msg) =>
@@ -158,7 +145,6 @@ const MessageContainer = ({ userId }) => {
     };
 
     const handleTyping = ({ conversationId: cid, userId: typingUserId }) => {
-      console.log("Received typing:", { cid, typingUserId });
       if (cid === conversationId && typingUserId !== currentUser._id) {
         setIsTyping(true);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -167,7 +153,6 @@ const MessageContainer = ({ userId }) => {
     };
 
     const handleStopTyping = ({ conversationId: cid, userId: typingUserId }) => {
-      console.log("Received stopTyping:", { cid, typingUserId });
       if (cid === conversationId && typingUserId !== currentUser._id) {
         setIsTyping(false);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -180,7 +165,7 @@ const MessageContainer = ({ userId }) => {
     socket.on("typing", handleTyping);
     socket.on("stopTyping", handleStopTyping);
 
-    if (conversationId && selectedConversation._id === conversationId) {
+    if (conversationId && selectedConversation._id === conversationId && messages.length > 0) {
       socket.emit("markMessagesAsSeen", { conversationId, userId: currentUser._id });
     }
 
@@ -192,7 +177,7 @@ const MessageContainer = ({ userId }) => {
       socket.off("stopTyping", handleStopTyping);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
-  }, [socket, userId, currentUser._id, conversationId, selectedConversation._id]);
+  }, [socket, userId, currentUser._id, conversationId, selectedConversation._id, messages.length]);
 
   const dotVariants = {
     animate: {
@@ -236,7 +221,7 @@ const MessageContainer = ({ userId }) => {
         <Typography
           color="text.secondary"
           textAlign="center"
-          sx={{ flex: 5, display: "flex", alignItems: "center", justifyContent: "center" }}
+          sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           No messages yet. Start the conversation!
         </Typography>

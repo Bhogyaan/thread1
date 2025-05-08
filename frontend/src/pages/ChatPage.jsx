@@ -1,5 +1,4 @@
-import React from "react";
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRecoilState, useRecoilValue } from "recoil";
 import { motion } from "framer-motion";
 import {
@@ -15,7 +14,8 @@ import {
   Typography,
   useMediaQuery,
   Badge,
-  Skeleton
+  Skeleton,
+  Snackbar,
 } from "@mui/material";
 import { Search as SearchIcon, ArrowBack } from "@mui/icons-material";
 import { message } from "antd";
@@ -71,7 +71,13 @@ const ConversationItem = React.memo(({ conversation, selectedConversation, setSe
         primary={
           <Typography
             variant="body1"
-            sx={{ fontSize: { xs: "0.875rem", sm: "1rem" }, fontWeight: conversation.lastMessage.seen ? "normal" : "bold", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+            sx={{
+              fontSize: { xs: "0.875rem", sm: "1rem" },
+              fontWeight: conversation.lastMessage.seen ? "normal" : "bold",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
             {conversation.participants[0].username}
           </Typography>
@@ -81,7 +87,11 @@ const ConversationItem = React.memo(({ conversation, selectedConversation, setSe
             noWrap
             variant="body2"
             color="#b0b0b0"
-            sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" }, overflow: "hidden", textOverflow: "ellipsis" }}
+            sx={{
+              fontSize: { xs: "0.75rem", sm: "0.875rem" },
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
             {conversation.lastMessage.text || "No messages yet"} {conversation.lastMessage.seen ? "" : "•"}
           </Typography>
@@ -100,19 +110,10 @@ const ChatPage = () => {
   const currentUser = useRecoilValue(userAtom);
   const { socket, onlineUsers } = useSocket();
   const isSmall = useMediaQuery("(max-width:600px)");
+  const [notification, setNotification] = useState(null);
 
   useEffect(() => {
     if (!socket) return;
-
-    const handleMessagesSeen = ({ conversationId }) => {
-      setConversations((prev) =>
-        prev.map((conversation) =>
-          conversation._id === conversationId
-            ? { ...conversation, lastMessage: { ...conversation.lastMessage, seen: true } }
-            : conversation
-        )
-      );
-    };
 
     const handleNewMessage = (message) => {
       setConversations((prev) => {
@@ -132,7 +133,6 @@ const ChatPage = () => {
           );
         }
         return [
-          ...prev,
           {
             _id: message.conversationId,
             participants: [
@@ -149,6 +149,7 @@ const ChatPage = () => {
             },
             mock: false,
           },
+          ...prev,
         ];
       });
 
@@ -164,12 +165,33 @@ const ChatPage = () => {
       }
     };
 
-    socket.on("messagesSeen", handleMessagesSeen);
+    const handleNewMessageNotification = (notif) => {
+      if (notif.conversationId !== selectedConversation._id) {
+        setNotification({
+          message: `New message from ${notif.sender.username}`,
+          conversationId: notif.conversationId,
+        });
+      }
+    };
+
+    const handleMessagesSeen = ({ conversationId }) => {
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation._id === conversationId
+            ? { ...conversation, lastMessage: { ...conversation.lastMessage, seen: true } }
+            : conversation
+        )
+      );
+    };
+
     socket.on("newMessage", handleNewMessage);
+    socket.on("newMessageNotification", handleNewMessageNotification);
+    socket.on("messagesSeen", handleMessagesSeen);
 
     return () => {
-      socket.off("messagesSeen", handleMessagesSeen);
       socket.off("newMessage", handleNewMessage);
+      socket.off("newMessageNotification", handleNewMessageNotification);
+      socket.off("messagesSeen", handleMessagesSeen);
     };
   }, [socket, setConversations, currentUser._id, selectedConversation._id, setSelectedConversation, onlineUsers]);
 
@@ -277,10 +299,43 @@ const ChatPage = () => {
     });
   }, [setSelectedConversation]);
 
+  const handleCloseNotification = () => {
+    setNotification(null);
+  };
+
+  const handleNotificationClick = () => {
+    if (notification?.conversationId) {
+      const conv = conversations.find((c) => c._id === notification.conversationId);
+      if (conv) {
+        setSelectedConversation({
+          _id: conv._id,
+          userId: conv.participants[0]._id,
+          username: conv.participants[0].username,
+          userProfilePic: conv.participants[0].profilePic,
+          isOnline: onlineUsers.includes(conv.participants[0]._id),
+          mock: false,
+        });
+      }
+    }
+    setNotification(null);
+  };
+
   const navHeight = isSmall ? 56 : 64;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
+      <Snackbar
+        open={!!notification}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        message={notification?.message}
+        action={
+          <IconButton size="small" aria-label="view" color="inherit" onClick={handleNotificationClick}>
+            <Typography variant="body2">View</Typography>
+          </IconButton>
+        }
+        sx={{ bgcolor: "#8515fe", color: "white" }}
+      />
       <Box
         sx={{
           width: "100%",
@@ -353,8 +408,8 @@ const ChatPage = () => {
                       <Skeleton variant="circular" width={40} height={40} />
                     </ListItemAvatar>
                     <ListItemText
-                      primary={<span><Skeleton variant="text" width="60%" /></span>}
-                      secondary={<span><Skeleton variant="text" width="40%" /></span>}
+                      primary={<Skeleton variant="text" width="60%" />}
+                      secondary={<Skeleton variant="text" width="40%" />}
                     />
                   </ListItem>
                 ))}
@@ -374,7 +429,6 @@ const ChatPage = () => {
             )}
           </Box>
         </Box>
-
         {selectedConversation._id && selectedConversation.userId && typeof selectedConversation.userId === "string" && selectedConversation.userId.trim() !== "" ? (
           <Box
             sx={{

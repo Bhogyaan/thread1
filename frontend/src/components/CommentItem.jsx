@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   Avatar,
   Box,
@@ -7,10 +7,12 @@ import {
   TextField,
   IconButton,
   Collapse,
+  CircularProgress,
 } from "@mui/material";
 import { Favorite, FavoriteBorder, Reply, ExpandMore, ExpandLess, Edit, Delete } from "@mui/icons-material";
-import { message, App as AntdApp } from "antd"; // Wrap the application with Ant Design's App
+import { message } from "antd";
 import { formatDistanceToNow } from "date-fns";
+import PropTypes from "prop-types";
 
 const CommentItem = ({
   comment,
@@ -23,30 +25,30 @@ const CommentItem = ({
   onEdit,
   onDelete,
   onLike,
-  fetchComments,
 }) => {
   const [expanded, setExpanded] = useState(depth < 2);
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [isReplying, setIsReplying] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(comment.text);
+  const [editText, setEditText] = useState(comment.text || "");
+  const [isLiking, setIsLiking] = useState(false);
+  const [optimisticLikes, setOptimisticLikes] = useState(comment.likes || []);
 
   const isCommentOwner = currentUser?._id === comment.userId?._id?.toString();
   const isPostOwner = currentUser?._id === postOwnerId?.toString();
   const isAdmin = currentUser?.isAdmin;
   const canEdit = isCommentOwner || isAdmin;
   const canDelete = isCommentOwner || isPostOwner || isAdmin;
-  const isLiked = comment.likes?.includes(currentUser?._id);
+  const isLiked = optimisticLikes.includes(currentUser?._id);
 
   const handleToggleReplies = () => {
     setExpanded(!expanded);
   };
 
   const handleReply = () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      message.error("You must be logged in to reply to comments.");
+    if (!currentUser) {
+      message.error("You must be logged in to reply");
       return;
     }
     setShowReplyForm(true);
@@ -56,62 +58,45 @@ const CommentItem = ({
       username: comment.username || comment.userId?.username,
     });
   };
-  
+
   const handleSubmitReply = async () => {
     if (!replyText.trim()) {
       message.error("Reply cannot be empty");
       return;
     }
     if (!postId || !comment._id) {
-      console.error("Invalid props in CommentItem:", { postId, commentId: comment._id, topLevelCommentId });
+      console.error("handleSubmitReply: Invalid props", { postId, commentId: comment._id, topLevelCommentId });
       message.error("Invalid post or comment data");
       return;
     }
-  
-    const token = localStorage.getItem("token");
-    if (!token) {
-      message.error("You must be logged in to reply to comments.");
-      return;
-    }
-  
+
     setIsReplying(true);
     try {
       const endpoint = `/api/posts/post/${postId}/comment/${topLevelCommentId || comment._id}/reply`;
-      console.log("handleSubmitReply:", {
-        postId,
-        topLevelCommentId,
-        commentId: comment._id,
-        endpoint,
-        token: token ? `${token.slice(0, 10)}...` : "No token",
-        body: { text: replyText, parentId: comment._id },
-      });
-  
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          "Authorization": `Bearer ${localStorage.getItem("token")}`,
         },
-        credentials: "include",
         body: JSON.stringify({ text: replyText, parentId: comment._id }),
       });
-  
+
       const data = await res.json();
-      console.log("handleSubmitReply response:", { status: res.status, data });
-  
+
       if (!res.ok) {
-        console.error("handleSubmitReply error:", data);
+        console.error("handleSubmitReply: API error", { status: res.status, data });
         throw new Error(data.error || `HTTP error ${res.status}`);
       }
-  
-      message.success("Reply added");
+
+      message.success("Reply added successfully");
       setReplyText("");
       setShowReplyForm(false);
       onReply?.(null);
-      await fetchComments();
+      // Socket event will update state
     } catch (error) {
-      console.error("handleSubmitReply error:", error);
-      message.error(error.message || "An error occurred while adding the reply");
+      console.error("handleSubmitReply: Error", { message: error.message, stack: error.stack, postId, commentId: comment._id, topLevelCommentId });
+      message.error(error.message || "Failed to add reply");
     } finally {
       setIsReplying(false);
     }
@@ -125,9 +110,11 @@ const CommentItem = ({
     try {
       await onEdit(comment._id, editText, !!comment.parentId, topLevelCommentId || comment._id);
       setIsEditing(false);
-      message.success("Comment updated");
+      message.success("Comment updated successfully");
+      // Socket event will update state
     } catch (error) {
-      message.error(error.message || "An error occurred while updating the comment");
+      console.error("handleEdit: Error", { message: error.message, stack: error.stack, commentId: comment._id });
+      message.error(error.message || "Failed to update comment");
     }
   };
 
@@ -135,44 +122,73 @@ const CommentItem = ({
     if (!window.confirm("Are you sure you want to delete this comment?")) return;
     try {
       await onDelete(comment._id, !!comment.parentId, topLevelCommentId || comment._id);
-      message.success("Comment deleted");
+      message.success("Comment deleted successfully");
+      // Socket event will update state
     } catch (error) {
-      message.error(error.message || "An error occurred while deleting the comment");
+      console.error("handleDelete: Error", { message: error.message, stack: error.stack, commentId: comment._id });
+      message.error(error.message || "Failed to delete comment");
     }
   };
 
   const handleLike = async () => {
+    if (!currentUser) {
+      message.error("You must be logged in to like comments");
+      return;
+    }
+    setIsLiking(true);
+    const wasLiked = isLiked;
+    setOptimisticLikes((prev) =>
+      wasLiked
+        ? prev.filter((id) => id !== currentUser._id)
+        : [...prev, currentUser._id]
+    );
     try {
       await onLike(comment._id, !!comment.parentId, topLevelCommentId || comment._id);
+      // Socket event will update state
     } catch (error) {
-      message.error(error.message || "An error occurred while liking the comment");
+      console.error("handleLike: Error", { message: error.message, stack: error.stack, commentId: comment._id });
+      message.error(error.message || "Failed to like/unlike comment");
+      setOptimisticLikes(comment.likes || []); // Revert on error
+    } finally {
+      setIsLiking(false);
     }
   };
 
   return (
     <Box
       sx={{
-        ml: depth * 2,
-        mb: 1,
-        p: 1,
-        borderRadius: "16px",
-        bgcolor: depth % 2 === 0 ? "background.paper" : "grey.50",
-        border: "1px solid rgba(255, 255, 255, 0.2)",
-        backdropFilter: depth % 2 === 0 ? "blur(10px)" : "none",
+        ml: depth * 1,
+        mb: 0.5,
+        px: { xs: 1, sm: 2 },
+        py: 0.5,
+        bgcolor: "#FFFFFF",
+        borderBottom: "1px solid #EFEFEF",
+        maxWidth: "100%",
+        overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
       <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
         <Avatar
           src={comment.userProfilePic || comment.userId?.profilePic || "/default-avatar.png"}
           alt={comment.username || comment.userId?.username}
-          sx={{ width: 32, height: 32 }}
+          sx={{ width: { xs: 24, sm: 28 }, height: { xs: 24, sm: 28 } }}
         />
-        <Box sx={{ flex: 1 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="subtitle2" fontWeight="bold" color="text.primary">
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
+            <Typography
+              variant="body2"
+              fontWeight="600"
+              fontSize={{ xs: "13px", sm: "14px" }}
+              color="#262626"
+            >
               {comment.username || comment.userId?.username || "Unknown"}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              fontSize={{ xs: "11px", sm: "12px" }}
+              color="#8E8E8E"
+            >
               {formatDistanceToNow(new Date(comment.createdAt))} ago
               {comment.isEdited && " • Edited"}
             </Typography>
@@ -188,22 +204,29 @@ const CommentItem = ({
                 multiline
                 maxRows={4}
                 sx={{
+                  bgcolor: "#FAFAFA",
+                  borderRadius: 1,
                   "& .MuiOutlinedInput-root": {
-                    "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
-                    "&:hover fieldset": { borderColor: "rgba(255, 255, 255, 0.5)" },
-                    "&.Mui-focused fieldset": { borderColor: "primary.main" },
+                    "& fieldset": { borderColor: "#EFEFEF" },
+                    "&:hover fieldset": { borderColor: "#DBDBDB" },
+                    "&.Mui-focused fieldset": { borderColor: "#0095F6" },
+                    "& input, & textarea": { color: "#000000" },
                   },
-                  "& .MuiInputBase-input": { color: "text.primary" },
-                  "& .MuiInputBase-input::placeholder": { color: "text.secondary" },
                 }}
               />
               <Box sx={{ mt: 1, display: "flex", gap: 1 }}>
                 <Button
                   size="small"
-                  variant="contained"
                   onClick={handleEdit}
                   disabled={!editText.trim()}
-                  sx={{ bgcolor: "primary.main", "&:hover": { bgcolor: "primary.dark" } }}
+                  sx={{
+                    color: "#0095F6",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    fontSize: { xs: "13px", sm: "14px" },
+                    p: 0,
+                    minWidth: "auto",
+                  }}
                 >
                   Save
                 </Button>
@@ -213,82 +236,124 @@ const CommentItem = ({
                     setIsEditing(false);
                     setEditText(comment.text);
                   }}
-                  sx={{ color: "text.secondary" }}
+                  sx={{
+                    color: "#8E8E8E",
+                    textTransform: "none",
+                    fontSize: { xs: "13px", sm: "14px" },
+                    p: 0,
+                    minWidth: "auto",
+                  }}
                 >
                   Cancel
                 </Button>
               </Box>
             </Box>
           ) : (
-            <Typography variant="body2" color="text.primary" sx={{ mt: 0.5, wordBreak: "break-word" }}>
+            <Typography
+              variant="body2"
+              fontSize={{ xs: "13px", sm: "14px" }}
+              color="#262626"
+              sx={{ mt: 0.5, wordBreak: "break-word", overflowWrap: "break-word" }}
+            >
               {comment.text}
             </Typography>
           )}
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
-            <IconButton size="small" onClick={handleLike}>
-              {isLiked ? <Favorite sx={{ color: "primary.main" }} /> : <FavoriteBorder sx={{ color: "text.secondary" }} />}
-            </IconButton>
-            <Typography variant="caption" color="text.secondary">{comment.likes?.length || 0}</Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 1, sm: 2 }, mt: 0.5 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <IconButton size="small" onClick={handleLike} sx={{ p: 0 }} disabled={isLiking}>
+                {isLiking ? (
+                  <CircularProgress size={14} />
+                ) : isLiked ? (
+                  <Favorite sx={{ color: "#ED4956", fontSize: { xs: 14, sm: 16 } }} />
+                ) : (
+                  <FavoriteBorder sx={{ color: "#8E8E8E", fontSize: { xs: 14, sm: 16 } }} />
+                )}
+              </IconButton>
+              {optimisticLikes.length > 0 && (
+                <Typography
+                  variant="caption"
+                  fontSize={{ xs: "11px", sm: "12px" }}
+                  color="#8E8E8E"
+                >
+                  {optimisticLikes.length}
+                </Typography>
+              )}
+            </Box>
             <Button
               size="small"
-              startIcon={<Reply sx={{ color: "text.secondary" }} />}
               onClick={handleReply}
-              sx={{ color: "text.secondary", textTransform: "none" }}
+              sx={{
+                color: "#0095F6",
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: { xs: "12px", sm: "13px" },
+                p: 0,
+                minWidth: "auto",
+              }}
             >
               Reply
             </Button>
             {canEdit && (
-              <Button
+              <IconButton
                 size="small"
-                startIcon={<Edit sx={{ color: "text.secondary" }} />}
                 onClick={() => setIsEditing(true)}
-                sx={{ color: "text.secondary", textTransform: "none" }}
+                sx={{ p: 0 }}
               >
-                Edit
-              </Button>
+                <Edit sx={{ color: "#0095F6", fontSize: { xs: 14, sm: 16 } }} />
+              </IconButton>
             )}
             {canDelete && (
-              <Button
+              <IconButton
                 size="small"
-                startIcon={<Delete sx={{ color: "error.main" }} />}
                 onClick={handleDelete}
-                sx={{ color: "error.main", textTransform: "none" }}
+                sx={{ p: 0 }}
               >
-                Delete
-              </Button>
+                <Delete sx={{ color: "#ED4956", fontSize: { xs: 14, sm: 16 } }} />
+              </IconButton>
             )}
           </Box>
 
           {showReplyForm && (
-            <Box sx={{ mt: 1, ml: 2 }}>
+            <Box sx={{ mt: 1, ml: 1 }}>
               <TextField
                 fullWidth
                 size="small"
-                placeholder="Write a reply..."
+                placeholder="Add a reply..."
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 multiline
                 maxRows={4}
+                disabled={isReplying}
                 sx={{
+                  bgcolor: "#FAFAFA",
+                  borderRadius: 1,
                   "& .MuiOutlinedInput-root": {
-                    "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
-                    "&:hover fieldset": { borderColor: "rgba(255, 255, 255, 0.5)" },
-                    "&.Mui-focused fieldset": { borderColor: "primary.main" },
+                    "& fieldset": { borderColor: "#EFEFEF" },
+                    "&:hover fieldset": { borderColor: "#DBDBDB" },
+                    "&.Mui-focused fieldset": { borderColor: "#0095F6" },
+                    "& input, & textarea": { color: "#000000" },
                   },
-                  "& .MuiInputBase-input": { color: "text.primary" },
-                  "& .MuiInputBase-input::placeholder": { color: "text.secondary" },
                 }}
               />
               <Box sx={{ mt: 1, display: "flex", gap: 1 }}>
                 <Button
                   size="small"
-                  variant="contained"
                   onClick={handleSubmitReply}
                   disabled={!replyText.trim() || isReplying}
-                  sx={{ bgcolor: "primary.main", "&:hover": { bgcolor: "primary.dark" } }}
+                  sx={{
+                    color: "#0095F6",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    fontSize: { xs: "13px", sm: "14px" },
+                    p: 0,
+                    minWidth: "auto",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                  }}
                 >
-                  Post
+                  {isReplying ? <CircularProgress size={14} /> : "Post"}
                 </Button>
                 <Button
                   size="small"
@@ -297,7 +362,13 @@ const CommentItem = ({
                     setReplyText("");
                     onReply?.(null);
                   }}
-                  sx={{ color: "text.secondary" }}
+                  sx={{
+                    color: "#8E8E8E",
+                    textTransform: "none",
+                    fontSize: { xs: "13px", sm: "14px" },
+                    p: 0,
+                    minWidth: "auto",
+                  }}
                 >
                   Cancel
                 </Button>
@@ -308,14 +379,22 @@ const CommentItem = ({
       </Box>
 
       {comment.replies?.length > 0 && (
-        <Box sx={{ ml: 2 }}>
+        <Box sx={{ ml: { xs: 1, sm: 4 }, mt: 0.5 }}>
           <Button
             size="small"
             onClick={handleToggleReplies}
-            startIcon={expanded ? <ExpandLess sx={{ color: "text.secondary" }} /> : <ExpandMore sx={{ color: "text.secondary" }} />}
-            sx={{ color: "text.secondary", textTransform: "none" }}
+            sx={{
+              color: "#0095F6",
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: { xs: "12px", sm: "13px" },
+              p: 0,
+              minWidth: "auto",
+            }}
           >
-            {expanded ? "Hide" : "Show"} {comment.replies.length} repl{comment.replies.length === 1 ? "y" : "ies"}
+            {expanded
+              ? `Hide ${comment.replies.length} repl${comment.replies.length === 1 ? "y" : "ies"}`
+              : `View ${comment.replies.length} repl${comment.replies.length === 1 ? "y" : "ies"}`}
           </Button>
           <Collapse in={expanded}>
             {comment.replies.map((reply) => (
@@ -331,7 +410,6 @@ const CommentItem = ({
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onLike={onLike}
-                fetchComments={fetchComments}
               />
             ))}
           </Collapse>
@@ -341,10 +419,17 @@ const CommentItem = ({
   );
 };
 
-const AppWrapper = () => (
-  <AntdApp>
-    <CommentItem />
-  </AntdApp>
-);
+CommentItem.propTypes = {
+  comment: PropTypes.object.isRequired,
+  depth: PropTypes.number,
+  currentUser: PropTypes.object,
+  postId: PropTypes.string.isRequired,
+  postOwnerId: PropTypes.string.isRequired,
+  topLevelCommentId: PropTypes.string,
+  onReply: PropTypes.func,
+  onEdit: PropTypes.func,
+  onDelete: PropTypes.func,
+  onLike: PropTypes.func,
+};
 
-export default CommentItem;
+export default memo(CommentItem);

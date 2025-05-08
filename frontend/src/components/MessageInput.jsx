@@ -1,5 +1,4 @@
-import React from "react";
-import { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Box, IconButton, InputAdornment, TextField, CircularProgress } from "@mui/material";
 import { IoSendSharp } from "react-icons/io5";
 import { BsFillImageFill } from "react-icons/bs";
@@ -23,31 +22,33 @@ const MessageInput = () => {
   const { handleImageChange, mediaUrl, setMediaUrl, mediaType, setMediaType } = usePreviewImg();
   const [isSending, setIsSending] = useState(false);
   const { socket } = useSocket();
+  const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (!socket || !selectedConversation._id) return;
 
-    let typingTimeout;
     const emitTyping = () => {
       if (!isTyping) {
         socket.emit("typing", { conversationId: selectedConversation._id });
         setIsTyping(true);
       }
-      clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
         socket.emit("stopTyping", { conversationId: selectedConversation._id });
         setIsTyping(false);
       }, 2000);
     };
 
-    if (messageText || mediaUrl) {
+    if (messageText.trim() || mediaUrl) {
       emitTyping();
     } else if (isTyping) {
       socket.emit("stopTyping", { conversationId: selectedConversation._id });
       setIsTyping(false);
     }
 
-    return () => clearTimeout(typingTimeout);
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
   }, [messageText, mediaUrl, selectedConversation._id, socket, isTyping]);
 
   const handleSendMessage = async (e) => {
@@ -74,25 +75,13 @@ const MessageInput = () => {
 
       if (!res.ok) {
         const errorText = await res.text();
-        console.error("API error:", res.status, errorText);
         throw new Error(`Failed to send message: ${res.status} ${errorText}`);
       }
 
       const data = await res.json();
       if (data.error) {
-        console.error("Backend error:", data.error);
         showToast("Error", data.error, "error");
         return;
-      }
-
-      // Fallback: Emit newMessage if backend doesn't
-      if (socket) {
-        socket.emit("newMessage", {
-          ...data,
-          conversationId: selectedConversation._id,
-          sender: { _id: data.sender },
-          recipientId: selectedConversation.userId,
-        });
       }
 
       if (selectedConversation.mock) {
@@ -103,7 +92,11 @@ const MessageInput = () => {
                   ...conv,
                   _id: data.conversationId,
                   mock: false,
-                  lastMessage: { text: messageText.trim() || "Media", sender: data.sender },
+                  lastMessage: {
+                    text: messageText.trim() || "Media",
+                    sender: { _id: data.sender._id },
+                    seen: false,
+                  },
                 }
               : conv
           )
@@ -119,7 +112,11 @@ const MessageInput = () => {
             conv._id === selectedConversation._id
               ? {
                   ...conv,
-                  lastMessage: { text: messageText.trim() || "Media", sender: data.sender },
+                  lastMessage: {
+                    text: messageText.trim() || "Media",
+                    sender: { _id: data.sender._id },
+                    seen: false,
+                  },
                 }
               : conv
           )
@@ -130,7 +127,6 @@ const MessageInput = () => {
       setMediaUrl(null);
       setMediaType(null);
     } catch (error) {
-      console.error("Send message error:", error.message);
       showToast("Error", error.message, "error");
     } finally {
       setIsSending(false);
@@ -271,6 +267,7 @@ const MessageInput = () => {
                     onClick={handleSendMessage}
                     disabled={isSending || (!messageText.trim() && !mediaUrl)}
                     sx={{ color: "#8515fe", p: 0.5 }}
+                    aria-label="Send message"
                   >
                     {isSending ? (
                       <CircularProgress size={20} sx={{ color: "#8515fe" }} />

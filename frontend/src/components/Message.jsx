@@ -1,5 +1,4 @@
-import React from "react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { Avatar, Box, Typography, Paper, Skeleton } from "@mui/material";
 import { useRecoilValue } from "recoil";
 import userAtom from "../atoms/userAtom";
@@ -110,7 +109,6 @@ const Message = ({ isOwnMessage, message }) => {
         display: "flex",
         flexDirection: isOwnMessage ? "row-reverse" : "row",
         alignItems: "flex-end",
-        
         p: 1,
       }}
     >
@@ -123,7 +121,7 @@ const Message = ({ isOwnMessage, message }) => {
       <Paper
         sx={{
           pr: 1.5,
-          pl:1.5,
+          pl: 1.5,
           bgcolor: isOwnMessage ? "#8515fe" : "#2e2e2e",
           color: isOwnMessage ? "white" : "#b0b0b0",
           borderRadius: 3,
